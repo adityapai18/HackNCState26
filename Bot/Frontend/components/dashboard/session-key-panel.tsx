@@ -1,0 +1,84 @@
+"use client";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { CopyButton } from "@/components/copy-button";
+import { truncateAddress } from "@/lib/utils";
+import { Loader2, KeyRound } from "lucide-react";
+
+interface SessionKeyPanelProps {
+  sessionKeyAddress: string | null;
+  step2Status: string;
+  loading: string | null;
+  hasSmartAccount: boolean;
+  onIssueSessionKey: () => void;
+}
+
+export function SessionKeyPanel({
+  sessionKeyAddress,
+  step2Status,
+  loading,
+  hasSmartAccount,
+  onIssueSessionKey,
+}: SessionKeyPanelProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-chart-3" />
+          Session Key
+        </CardTitle>
+        <CardDescription>
+          Issue a scoped session key for ping + withdraw on MockVault
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {sessionKeyAddress ? (
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Session Key Address</p>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className="font-mono text-xs">
+                  {truncateAddress(sessionKeyAddress)}
+                </Badge>
+                <CopyButton value={sessionKeyAddress} className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="secondary" className="text-xs">ping()</Badge>
+              <Badge variant="secondary" className="text-xs">withdraw()</Badge>
+              <Badge variant="secondary" className="text-xs">withdrawTo()</Badge>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Grants <code className="text-xs">ping()</code>, <code className="text-xs">withdraw()</code>, and <code className="text-xs">withdrawTo()</code> permissions with native-token allowance.
+            </p>
+          </div>
+        )}
+        <Button
+          onClick={onIssueSessionKey}
+          disabled={loading !== null || !hasSmartAccount}
+          variant={sessionKeyAddress ? "outline" : "default"}
+          className="w-full"
+        >
+          {loading === "session" ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Issuing…
+            </>
+          ) : sessionKeyAddress ? (
+            "Re-issue Session Key"
+          ) : (
+            "Issue Session Key"
+          )}
+        </Button>
+        {step2Status && (
+          <p className="text-xs text-muted-foreground break-all">{step2Status}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
