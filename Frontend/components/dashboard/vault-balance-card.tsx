@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { formatWei } from "@/lib/utils";
 import { Loader2, Vault, RefreshCw } from "lucide-react";
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -13,9 +14,12 @@ interface VaultBalanceCardProps {
   depositVaultStatus: string;
   loading: string | null;
   hasSmartAccount: boolean;
-  onDeposit: () => void;
+  onDeposit: (amountEth?: string) => void;
   onRefresh: () => void;
   balanceSnapshots: BalanceSnapshot[];
+  showAmountInput?: boolean;
+  depositAmountEth?: string;
+  setDepositAmountEth?: (v: string) => void;
 }
 
 const chartConfig = {
@@ -33,7 +37,14 @@ export function VaultBalanceCard({
   onDeposit,
   onRefresh,
   balanceSnapshots,
+  showAmountInput = false,
+  depositAmountEth,
+  setDepositAmountEth,
 }: VaultBalanceCardProps) {
+  const buttonLabel = showAmountInput
+    ? `Deposit ${depositAmountEth && depositAmountEth.length > 0 ? depositAmountEth : "0.0001"} ETH`
+    : "Deposit 0.0001 ETH";
+
   return (
     <Card>
       <CardHeader>
@@ -65,8 +76,22 @@ export function VaultBalanceCard({
           )}
         </div>
 
+        {showAmountInput && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Amount (ETH)</p>
+            <Input
+              type="number"
+              min="0"
+              step="0.0001"
+              value={depositAmountEth ?? ""}
+              onChange={(e) => setDepositAmountEth?.(e.target.value)}
+              placeholder="0.0001"
+            />
+          </div>
+        )}
+
         <Button
-          onClick={onDeposit}
+          onClick={() => onDeposit(depositAmountEth)}
           disabled={loading !== null || !hasSmartAccount}
           className="w-full"
         >
@@ -76,7 +101,7 @@ export function VaultBalanceCard({
               Depositing…
             </>
           ) : (
-            "Deposit 0.0001 ETH"
+            buttonLabel
           )}
         </Button>
 

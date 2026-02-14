@@ -30,7 +30,7 @@ export function WalletInfoCard({
           Smart Account
         </CardTitle>
         <CardDescription>
-          Create a smart account linked to your EOA
+          {smartAccountAddress ? "Smart account is enabled for your EOA" : "Enable your smart account linked to your EOA"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -62,10 +62,10 @@ export function WalletInfoCard({
             {loading === "step1" ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating…
+                Enabling…
               </>
             ) : (
-              "Create Smart Account"
+              "Enable Smart Account"
             )}
           </Button>
         )}

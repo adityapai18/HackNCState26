@@ -3,24 +3,28 @@
 import { useState, useCallback, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect, useConfig, useSwitchChain } from "wagmi";
 import { getWalletClient } from "@wagmi/core";
-import { createPublicClient, http, encodeFunctionData, getAbiItem, getFunctionSelector, toHex, type Hex, type PublicClient } from "viem";
+import { createPublicClient, http, encodeFunctionData, getAbiItem, getFunctionSelector, toHex, parseEther, type Hex, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { MOCK_VAULT_ABI, ETH_TOKEN } from "@/lib/mockVaultAbi";
 
 /** ERC-4337: if sender is already deployed, initCode must be empty. */
-async function stripInitCodeIfDeployed<T extends { type: string; data?: { factory?: string; factoryData?: string } }>(
+async function stripInitCodeIfDeployed<T>(
   publicClient: PublicClient,
   sender: `0x${string}`,
   prepared: T
 ): Promise<T> {
-  if (prepared.type !== "user-operation-v070" && prepared.type !== "user-operation-v060") return prepared;
-  if (!prepared.data?.factory && !prepared.data?.factoryData) return prepared;
+  const candidate = prepared as {
+    type?: string;
+    data?: { factory?: string; factoryData?: string };
+  };
+  if (candidate.type !== "user-operation-v070" && candidate.type !== "user-operation-v060") return prepared;
+  if (!candidate.data?.factory && !candidate.data?.factoryData) return prepared;
   const code = await publicClient.getCode({ address: sender });
   if (!code || code === "0x") return prepared;
   return {
-    ...prepared,
+    ...(prepared as Record<string, unknown>),
     data: {
-      ...prepared.data,
+      ...(candidate.data ?? {}),
       factory: "0x0000000000000000000000000000000000000000" as `0x${string}`,
       factoryData: "0x" as `0x${string}`,
     },
@@ -557,13 +561,23 @@ export function useSessionKeys() {
     }
   }, [client, smartAccountAddress, sessionKeySigner, permissions, withdrawalCount, maxWithdrawalsEth, withdrawToAddress, withdrawAmountWei, withdrawalLimitEth, totalWithdrawnEth, log, addEvent]);
 
-  const handleDepositToVault = useCallback(async () => {
+  const handleDepositToVault = useCallback(async (amountEth?: string) => {
     if (!client || !smartAccountAddress) {
       setDepositVaultStatus("Complete Step 1 first.");
       return;
     }
     if (!MOCK_VAULT_ADDRESS) {
       setDepositVaultStatus("NEXT_PUBLIC_MOCK_VAULT_ADDRESS not set.");
+      return;
+    }
+    let amountWei: bigint = DEPOSIT_AMOUNT_WEI;
+    try {
+      if (amountEth && amountEth.trim().length > 0) {
+        amountWei = parseEther(amountEth.trim());
+        if (amountWei <= 0n) throw new Error("Amount must be positive");
+      }
+    } catch (e) {
+      setDepositVaultStatus("Enter a valid deposit amount in ETH.");
       return;
     }
     setLoading("deposit");
@@ -574,7 +588,7 @@ export function useSessionKeys() {
         functionName: "deposit",
       });
       let preparedCalls = await client.prepareCalls({
-        calls: [{ to: MOCK_VAULT_ADDRESS, data: depositData, value: toHex(DEPOSIT_AMOUNT_WEI) }],
+        calls: [{ to: MOCK_VAULT_ADDRESS, data: depositData, value: toHex(amountWei) }],
         from: smartAccountAddress as `0x${string}`,
       });
       const rpcUrlDeposit = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
@@ -584,8 +598,8 @@ export function useSessionKeys() {
       }
       const signedCalls = await client.signPreparedCalls(preparedCalls);
       const result = await client.sendPreparedCalls(signedCalls);
-      setDepositVaultStatus(`Deposit submitted. Call id: ${result.id ?? "—"}. Waiting for confirmation…`);
-      addEvent({ type: "deposit", timestamp: Date.now(), amountWei: DEPOSIT_AMOUNT_WEI });
+      setDepositVaultStatus(`Deposit submitted (${amountWei} wei). Call id: ${result.id ?? "—"}. Waiting for confirmation…`);
+      addEvent({ type: "deposit", timestamp: Date.now(), amountWei });
       const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
       if (rpcUrl) {
         const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
@@ -598,7 +612,7 @@ export function useSessionKeys() {
             functionName: "balances",
             args: [ETH_TOKEN as `0x${string}`, smartAccountAddress as `0x${string}`],
           });
-          if (balance >= DEPOSIT_AMOUNT_WEI) {
+          if (balance >= amountWei) {
             setVaultBalanceWei(balance);
             setDepositVaultStatus(`Deposit confirmed. You can now withdraw (up to ${maxWithdrawalsEth}x).`);
             break;
@@ -609,8 +623,8 @@ export function useSessionKeys() {
           setDepositVaultStatus("Deposit may still be pending. Wait and refresh.");
         }
       } else {
-        setVaultBalanceWei((p) => (p ?? 0n) + DEPOSIT_AMOUNT_WEI);
-        setDepositVaultStatus(`Deposited 0.0001 ETH. Wait 10-15s for confirmation.`);
+        setVaultBalanceWei((p) => (p ?? 0n) + amountWei);
+        setDepositVaultStatus(`Deposited ${amountWei} wei. Wait 10-15s for confirmation.`);
       }
     } catch (e) {
       const err = e as { message?: string };
