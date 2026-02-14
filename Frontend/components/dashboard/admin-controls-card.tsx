@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Settings } from "lucide-react";
 
 interface AdminControlsCardProps {
-  eoaAddress: string | undefined;
-  vaultOwner: string;
+  vaultOwner: string | null;
+  hasSmartAccount: boolean;
+  isOwnerWallet: boolean;
   maxWithdrawalsEth: number;
   withdrawalLimitEth: bigint | null;
   setLimitsStatus: string;
@@ -21,8 +22,9 @@ interface AdminControlsCardProps {
 }
 
 export function AdminControlsCard({
-  eoaAddress,
   vaultOwner,
+  hasSmartAccount,
+  isOwnerWallet,
   maxWithdrawalsEth,
   withdrawalLimitEth,
   setLimitsStatus,
@@ -33,24 +35,29 @@ export function AdminControlsCard({
   loading,
   onSetLimits,
 }: AdminControlsCardProps) {
-  const isOwner = eoaAddress?.toLowerCase() === vaultOwner.toLowerCase();
+  const canSetLimits = hasSmartAccount && isOwnerWallet;
 
   return (
     <Card className="border-border/50">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-chart-4" />
-          Token Limits (Admin)
+          Your Token Limits
         </CardTitle>
         <CardDescription>
-          ETH limits: max <strong>{maxWithdrawalsEth}</strong> withdrawals
+          Your current ETH limits: max <strong>{maxWithdrawalsEth}</strong> withdrawals
           {withdrawalLimitEth != null && withdrawalLimitEth > 0n
             ? `, max total ${withdrawalLimitEth.toString()} wei`
             : ", no total limit"}
+          {vaultOwner != null && (
+            <span className="block mt-1 text-muted-foreground/80">
+              Vault contract owner: {vaultOwner.slice(0, 6)}…{vaultOwner.slice(-4)}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isOwner ? (
+        {canSetLimits ? (
           <>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -86,7 +93,7 @@ export function AdminControlsCard({
                   Setting…
                 </>
               ) : (
-                "Set ETH Limits"
+                "Set My ETH Limits"
               )}
             </Button>
             {setLimitsStatus && (
@@ -95,7 +102,7 @@ export function AdminControlsCard({
           </>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Connect as vault owner to change limits.
+            Connect with the wallet that created this smart account to set your withdrawal limits.
           </p>
         )}
       </CardContent>

@@ -28,11 +28,16 @@ export interface MockVaultInterface extends Interface {
     nameOrSignature:
       | "balances"
       | "deposit"
+      | "getEffectiveLimits"
       | "maxWithdrawalsPerAccount"
       | "owner"
       | "ping"
+      | "setMyTokenLimits"
       | "setTokenLimits"
       | "totalWithdrawn"
+      | "userLimitsSet"
+      | "userMaxWithdrawalsPerAccount"
+      | "userWithdrawalLimitPerAccount"
       | "withdraw"
       | "withdrawTo"
       | "withdrawalCount"
@@ -42,6 +47,7 @@ export interface MockVaultInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "Deposited"
+      | "MyTokenLimitsSet"
       | "Pinged"
       | "TokenLimitsSet"
       | "Withdrawn"
@@ -54,11 +60,19 @@ export interface MockVaultInterface extends Interface {
   ): string;
   encodeFunctionData(functionFragment: "deposit", values?: undefined): string;
   encodeFunctionData(
+    functionFragment: "getEffectiveLimits",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "maxWithdrawalsPerAccount",
     values: [AddressLike]
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(functionFragment: "ping", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "setMyTokenLimits",
+    values: [AddressLike, BigNumberish, BigNumberish]
+  ): string;
   encodeFunctionData(
     functionFragment: "setTokenLimits",
     values: [AddressLike, BigNumberish, BigNumberish]
@@ -66,6 +80,18 @@ export interface MockVaultInterface extends Interface {
   encodeFunctionData(
     functionFragment: "totalWithdrawn",
     values: [AddressLike, AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "userLimitsSet",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "userMaxWithdrawalsPerAccount",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "userWithdrawalLimitPerAccount",
+    values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "withdraw",
@@ -87,17 +113,37 @@ export interface MockVaultInterface extends Interface {
   decodeFunctionResult(functionFragment: "balances", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "deposit", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "getEffectiveLimits",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "maxWithdrawalsPerAccount",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ping", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "setMyTokenLimits",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setTokenLimits",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "totalWithdrawn",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "userLimitsSet",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "userMaxWithdrawalsPerAccount",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "userWithdrawalLimitPerAccount",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "withdraw", data: BytesLike): Result;
@@ -118,6 +164,31 @@ export namespace DepositedEvent {
   export interface OutputObject {
     user: string;
     amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace MyTokenLimitsSetEvent {
+  export type InputTuple = [
+    account: AddressLike,
+    token: AddressLike,
+    maxWithdrawals: BigNumberish,
+    maxTotalWithdrawable: BigNumberish
+  ];
+  export type OutputTuple = [
+    account: string,
+    token: string,
+    maxWithdrawals: bigint,
+    maxTotalWithdrawable: bigint
+  ];
+  export interface OutputObject {
+    account: string;
+    token: string;
+    maxWithdrawals: bigint;
+    maxTotalWithdrawable: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -242,6 +313,17 @@ export interface MockVault extends BaseContract {
 
   deposit: TypedContractMethod<[], [void], "payable">;
 
+  getEffectiveLimits: TypedContractMethod<
+    [token: AddressLike, account: AddressLike],
+    [
+      [bigint, bigint] & {
+        maxWithdrawals: bigint;
+        maxTotalWithdrawable: bigint;
+      }
+    ],
+    "view"
+  >;
+
   maxWithdrawalsPerAccount: TypedContractMethod<
     [arg0: AddressLike],
     [bigint],
@@ -251,6 +333,16 @@ export interface MockVault extends BaseContract {
   owner: TypedContractMethod<[], [string], "view">;
 
   ping: TypedContractMethod<[], [void], "nonpayable">;
+
+  setMyTokenLimits: TypedContractMethod<
+    [
+      token: AddressLike,
+      maxWithdrawals: BigNumberish,
+      maxTotalWithdrawable: BigNumberish
+    ],
+    [void],
+    "nonpayable"
+  >;
 
   setTokenLimits: TypedContractMethod<
     [
@@ -264,6 +356,24 @@ export interface MockVault extends BaseContract {
 
   totalWithdrawn: TypedContractMethod<
     [arg0: AddressLike, arg1: AddressLike, arg2: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  userLimitsSet: TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
+    [boolean],
+    "view"
+  >;
+
+  userMaxWithdrawalsPerAccount: TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  userWithdrawalLimitPerAccount: TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
     [bigint],
     "view"
   >;
@@ -307,6 +417,18 @@ export interface MockVault extends BaseContract {
     nameOrSignature: "deposit"
   ): TypedContractMethod<[], [void], "payable">;
   getFunction(
+    nameOrSignature: "getEffectiveLimits"
+  ): TypedContractMethod<
+    [token: AddressLike, account: AddressLike],
+    [
+      [bigint, bigint] & {
+        maxWithdrawals: bigint;
+        maxTotalWithdrawable: bigint;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "maxWithdrawalsPerAccount"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
@@ -315,6 +437,17 @@ export interface MockVault extends BaseContract {
   getFunction(
     nameOrSignature: "ping"
   ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setMyTokenLimits"
+  ): TypedContractMethod<
+    [
+      token: AddressLike,
+      maxWithdrawals: BigNumberish,
+      maxTotalWithdrawable: BigNumberish
+    ],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "setTokenLimits"
   ): TypedContractMethod<
@@ -330,6 +463,27 @@ export interface MockVault extends BaseContract {
     nameOrSignature: "totalWithdrawn"
   ): TypedContractMethod<
     [arg0: AddressLike, arg1: AddressLike, arg2: AddressLike],
+    [bigint],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "userLimitsSet"
+  ): TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
+    [boolean],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "userMaxWithdrawalsPerAccount"
+  ): TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
+    [bigint],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "userWithdrawalLimitPerAccount"
+  ): TypedContractMethod<
+    [arg0: AddressLike, arg1: AddressLike],
     [bigint],
     "view"
   >;
@@ -364,6 +518,13 @@ export interface MockVault extends BaseContract {
     DepositedEvent.InputTuple,
     DepositedEvent.OutputTuple,
     DepositedEvent.OutputObject
+  >;
+  getEvent(
+    key: "MyTokenLimitsSet"
+  ): TypedContractEvent<
+    MyTokenLimitsSetEvent.InputTuple,
+    MyTokenLimitsSetEvent.OutputTuple,
+    MyTokenLimitsSetEvent.OutputObject
   >;
   getEvent(
     key: "Pinged"
@@ -404,6 +565,17 @@ export interface MockVault extends BaseContract {
       DepositedEvent.InputTuple,
       DepositedEvent.OutputTuple,
       DepositedEvent.OutputObject
+    >;
+
+    "MyTokenLimitsSet(address,address,uint256,uint256)": TypedContractEvent<
+      MyTokenLimitsSetEvent.InputTuple,
+      MyTokenLimitsSetEvent.OutputTuple,
+      MyTokenLimitsSetEvent.OutputObject
+    >;
+    MyTokenLimitsSet: TypedContractEvent<
+      MyTokenLimitsSetEvent.InputTuple,
+      MyTokenLimitsSetEvent.OutputTuple,
+      MyTokenLimitsSetEvent.OutputObject
     >;
 
     "Pinged(address,uint256)": TypedContractEvent<

@@ -12,6 +12,8 @@ interface SessionKeyPanelProps {
   step2Status: string;
   loading: string | null;
   hasSmartAccount: boolean;
+  /** True when the connected wallet is the one that created the smart account (only it can change session keys) */
+  isOwnerWallet: boolean;
   onIssueSessionKey: () => void;
 }
 
@@ -20,8 +22,10 @@ export function SessionKeyPanel({
   step2Status,
   loading,
   hasSmartAccount,
+  isOwnerWallet,
   onIssueSessionKey,
 }: SessionKeyPanelProps) {
+  const canChangeSessionKey = hasSmartAccount && isOwnerWallet;
   return (
     <Card>
       <CardHeader>
@@ -30,10 +34,15 @@ export function SessionKeyPanel({
           Session Key
         </CardTitle>
         <CardDescription>
-          Issue a scoped session key for ping + withdraw on MockVault
+          Issue a scoped session key for ping + withdraw on MockVault. Only the wallet that created the smart account can change session keys.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {hasSmartAccount && !isOwnerWallet && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Connect with the same wallet that created this smart account to issue or re-issue session keys.
+          </p>
+        )}
         {sessionKeyAddress ? (
           <div className="space-y-2">
             <div className="space-y-1">
@@ -60,7 +69,7 @@ export function SessionKeyPanel({
         )}
         <Button
           onClick={onIssueSessionKey}
-          disabled={loading !== null || !hasSmartAccount}
+          disabled={loading !== null || !canChangeSessionKey}
           variant={sessionKeyAddress ? "outline" : "default"}
           className="w-full"
         >

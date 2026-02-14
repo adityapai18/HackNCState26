@@ -37,6 +37,7 @@ export default function DashboardPage() {
             step2Status={sk.step2Status}
             loading={sk.loading}
             hasSmartAccount={!!sk.smartAccountAddress}
+            isOwnerWallet={sk.isOwnerWallet}
             onIssueSessionKey={sk.handleIssueSessionKey}
           />
           <VaultBalanceCard
@@ -72,10 +73,11 @@ export default function DashboardPage() {
             onPing={sk.handleTestPing}
             pingDots={pingDots}
           />
-          {sk.vaultOwner && (
+          {(sk.smartAccountAddress != null) && (
             <AdminControlsCard
-              eoaAddress={sk.eoaAddress}
               vaultOwner={sk.vaultOwner}
+              hasSmartAccount={!!sk.smartAccountAddress}
+              isOwnerWallet={sk.isOwnerWallet}
               maxWithdrawalsEth={sk.maxWithdrawalsEth}
               withdrawalLimitEth={sk.withdrawalLimitEth}
               setLimitsStatus={sk.setLimitsStatus}

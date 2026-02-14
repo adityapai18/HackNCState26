@@ -21,11 +21,19 @@ contract MockVault {
     /// @dev token => max total amount an account can withdraw (0 = no limit)
     mapping(address => uint256) public withdrawalLimitPerAccount;
 
+    /// @dev per-account overrides: token => account => has set own limits
+    mapping(address => mapping(address => bool)) public userLimitsSet;
+    /// @dev token => account => max withdrawals (used when userLimitsSet)
+    mapping(address => mapping(address => uint256)) public userMaxWithdrawalsPerAccount;
+    /// @dev token => account => max total withdrawable (used when userLimitsSet)
+    mapping(address => mapping(address => uint256)) public userWithdrawalLimitPerAccount;
+
     event Deposited(address indexed user, uint256 amount);
     event Pinged(address indexed caller, uint256 timestamp);
     event Withdrawn(address indexed user, uint256 amount);
     event WithdrawnTo(address indexed user, address indexed recipient, uint256 amount);
     event TokenLimitsSet(address indexed token, uint256 maxWithdrawals, uint256 maxTotalWithdrawable);
+    event MyTokenLimitsSet(address indexed account, address indexed token, uint256 maxWithdrawals, uint256 maxTotalWithdrawable);
 
     error OnlyOwner();
     error ZeroDeposit();
@@ -60,6 +68,26 @@ contract MockVault {
         emit TokenLimitsSet(token, maxWithdrawals, maxTotalWithdrawable);
     }
 
+    /// @dev Set withdrawal limits for msg.sender (e.g. your smart account). Overrides global limits for this account.
+    function setMyTokenLimits(
+        address token,
+        uint256 maxWithdrawals,
+        uint256 maxTotalWithdrawable
+    ) external {
+        userLimitsSet[token][msg.sender] = true;
+        userMaxWithdrawalsPerAccount[token][msg.sender] = maxWithdrawals;
+        userWithdrawalLimitPerAccount[token][msg.sender] = maxTotalWithdrawable;
+        emit MyTokenLimitsSet(msg.sender, token, maxWithdrawals, maxTotalWithdrawable);
+    }
+
+    /// @dev Effective limits for (token, account): user override if set, else global.
+    function getEffectiveLimits(address token, address account) external view returns (uint256 maxWithdrawals, uint256 maxTotalWithdrawable) {
+        if (userLimitsSet[token][account]) {
+            return (userMaxWithdrawalsPerAccount[token][account], userWithdrawalLimitPerAccount[token][account]);
+        }
+        return (maxWithdrawalsPerAccount[token], withdrawalLimitPerAccount[token]);
+    }
+
     function deposit() external payable {
         if (msg.value == 0) revert ZeroDeposit();
         balances[address(0)][msg.sender] += msg.value;
@@ -74,10 +102,10 @@ contract MockVault {
     function withdraw(uint256 amount, address sessionKeyId) external {
         address token = address(0);
         if (balances[token][msg.sender] < amount) revert InsufficientBalance();
-        uint256 maxCount = maxWithdrawalsPerAccount[token];
+        uint256 maxCount = userLimitsSet[token][msg.sender] ? userMaxWithdrawalsPerAccount[token][msg.sender] : maxWithdrawalsPerAccount[token];
         if (maxCount == 0) revert WithdrawalCountLimitReached();
         if (withdrawalCount[token][msg.sender][sessionKeyId] >= maxCount) revert WithdrawalCountLimitReached();
-        uint256 limit = withdrawalLimitPerAccount[token];
+        uint256 limit = userLimitsSet[token][msg.sender] ? userWithdrawalLimitPerAccount[token][msg.sender] : withdrawalLimitPerAccount[token];
         if (limit != 0 && totalWithdrawn[token][msg.sender][sessionKeyId] + amount > limit) revert WithdrawalAmountLimitReached();
 
         withdrawalCount[token][msg.sender][sessionKeyId] += 1;
@@ -92,10 +120,10 @@ contract MockVault {
     function withdrawTo(uint256 amount, address recipient, address sessionKeyId) external {
         address token = address(0);
         if (balances[token][msg.sender] < amount) revert InsufficientBalance();
-        uint256 maxCount = maxWithdrawalsPerAccount[token];
+        uint256 maxCount = userLimitsSet[token][msg.sender] ? userMaxWithdrawalsPerAccount[token][msg.sender] : maxWithdrawalsPerAccount[token];
         if (maxCount == 0) revert WithdrawalCountLimitReached();
         if (withdrawalCount[token][msg.sender][sessionKeyId] >= maxCount) revert WithdrawalCountLimitReached();
-        uint256 limit = withdrawalLimitPerAccount[token];
+        uint256 limit = userLimitsSet[token][msg.sender] ? userWithdrawalLimitPerAccount[token][msg.sender] : withdrawalLimitPerAccount[token];
         if (limit != 0 && totalWithdrawn[token][msg.sender][sessionKeyId] + amount > limit) revert WithdrawalAmountLimitReached();
 
         withdrawalCount[token][msg.sender][sessionKeyId] += 1;

@@ -47,6 +47,8 @@ export function useSessionKeys() {
 
   const [client, setClient] = useState<SmartWalletClient | null>(null);
   const [smartAccountAddress, setSmartAccountAddress] = useState<string | null>(null);
+  /** EOA that created the smart account; only this wallet can issue/revoke session keys */
+  const [ownerEoaAddress, setOwnerEoaAddress] = useState<string | null>(null);
   const [sessionKeySigner, setSessionKeySigner] = useState<import("@aa-sdk/core").SmartAccountSigner | null>(null);
   const [sessionKeyAddress, setSessionKeyAddress] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<GrantPermissionsResult | null>(null);
@@ -78,30 +80,31 @@ export function useSessionKeys() {
     setVaultEvents((prev) => [...prev, event]);
   }, []);
 
-  // Read vault owner and ETH token limits
+  // Read vault owner (for display only; limits are per-account via setMyTokenLimits)
   useEffect(() => {
     if (!MOCK_VAULT_ADDRESS || MOCK_VAULT_ADDRESS === "0x") return;
     const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
     if (!rpcUrl) return;
     const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
     let cancelled = false;
-    Promise.all([
-      publicClient.readContract({ address: MOCK_VAULT_ADDRESS, abi: MOCK_VAULT_ABI, functionName: "owner" }),
-      publicClient.readContract({ address: MOCK_VAULT_ADDRESS, abi: MOCK_VAULT_ABI, functionName: "maxWithdrawalsPerAccount", args: [ETH_TOKEN as `0x${string}`] }),
-      publicClient.readContract({ address: MOCK_VAULT_ADDRESS, abi: MOCK_VAULT_ABI, functionName: "withdrawalLimitPerAccount", args: [ETH_TOKEN as `0x${string}`] }),
-    ])
-      .then(([owner, maxW, limit]) => {
-        if (!cancelled) {
-          setVaultOwner(owner as string);
-          setMaxWithdrawalsEth(Number(maxW));
-          setWithdrawalLimitEth((limit as bigint) === 0n ? null : (limit as bigint));
-        }
-      })
-      .catch(() => { if (!cancelled) { setVaultOwner(null); setMaxWithdrawalsEth(2); setWithdrawalLimitEth(null); } });
+    publicClient.readContract({ address: MOCK_VAULT_ADDRESS, abi: MOCK_VAULT_ABI, functionName: "owner" })
+      .then((owner) => { if (!cancelled) setVaultOwner(owner as string); })
+      .catch(() => { if (!cancelled) setVaultOwner(null); });
     return () => { cancelled = true; };
   }, [refreshBalanceTrigger]);
 
-  // Read vault balance and per-session-key total withdrawn / withdrawal count
+  // Clear smart account and session key state when wallet disconnects
+  useEffect(() => {
+    if (eoaAddress != null) return;
+    setClient(null);
+    setSmartAccountAddress(null);
+    setOwnerEoaAddress(null);
+    setSessionKeySigner(null);
+    setSessionKeyAddress(null);
+    setPermissions(null);
+  }, [eoaAddress]);
+
+  // Read vault balance, effective limits for this smart account, and per-session-key totals
   useEffect(() => {
     if (!smartAccountAddress || !MOCK_VAULT_ADDRESS || MOCK_VAULT_ADDRESS === "0x") return;
     const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
@@ -109,11 +112,17 @@ export function useSessionKeys() {
     const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
     let cancelled = false;
     const skAddr = sessionKeyAddress as `0x${string}` | null;
-    const reads = [
+    const reads: Promise<unknown>[] = [
       publicClient.readContract({
         address: MOCK_VAULT_ADDRESS,
         abi: MOCK_VAULT_ABI,
         functionName: "balances",
+        args: [ETH_TOKEN as `0x${string}`, smartAccountAddress as `0x${string}`],
+      }),
+      publicClient.readContract({
+        address: MOCK_VAULT_ADDRESS,
+        abi: MOCK_VAULT_ABI,
+        functionName: "getEffectiveLimits",
         args: [ETH_TOKEN as `0x${string}`, smartAccountAddress as `0x${string}`],
       }),
     ];
@@ -137,9 +146,14 @@ export function useSessionKeys() {
       .then((results) => {
         if (!cancelled) {
           setVaultBalanceWei(results[0] as bigint);
-          if (skAddr && results.length >= 3) {
-            setTotalWithdrawnEth(results[1] as bigint);
-            setWithdrawalCountEth(Number(results[2]));
+          const [maxW, maxTotal] = results[1] as [bigint, bigint];
+          setMaxWithdrawalsEth(Number(maxW));
+          setWithdrawalLimitEth(maxTotal === 0n ? null : maxTotal);
+          setAdminMaxWithdrawals(String(maxW));
+          setAdminMaxTotalWei(maxTotal === 0n ? "0" : String(maxTotal));
+          if (skAddr && results.length >= 4) {
+            setTotalWithdrawnEth(results[2] as bigint);
+            setWithdrawalCountEth(Number(results[3]));
           } else {
             setTotalWithdrawnEth(null);
             setWithdrawalCountEth(0);
@@ -214,7 +228,8 @@ export function useSessionKeys() {
       const saAddress = account.address;
       setClient(smartWalletClient);
       setSmartAccountAddress(saAddress);
-      log("Step 1: Smart Account address", saAddress);
+      setOwnerEoaAddress(eoaAddress ?? null);
+      log("Step 1: Smart Account address", saAddress, "owner EOA:", eoaAddress);
       setStep1Status(`Smart Account created: ${saAddress}`);
     } catch (e) {
       const err = e as { message?: string };
@@ -229,6 +244,10 @@ export function useSessionKeys() {
   const handleIssueSessionKey = useCallback(async () => {
     if (!client || !smartAccountAddress) {
       setStep2Status("Complete Step 1 first (Connect & Create Smart Account).");
+      return;
+    }
+    if (ownerEoaAddress != null && eoaAddress !== ownerEoaAddress) {
+      setStep2Status("Only the wallet that created this smart account can change session keys. Connect with that wallet.");
       return;
     }
     if (!MOCK_VAULT_ADDRESS || MOCK_VAULT_ADDRESS === "0x") {
@@ -295,7 +314,7 @@ export function useSessionKeys() {
     } finally {
       setLoading(null);
     }
-  }, [client, smartAccountAddress, log]);
+  }, [client, smartAccountAddress, ownerEoaAddress, eoaAddress, log]);
 
   const handleTestPing = useCallback(async () => {
     if (!client || !smartAccountAddress || !sessionKeySigner || !permissions) {
@@ -604,8 +623,12 @@ export function useSessionKeys() {
   const [adminMaxWithdrawals, setAdminMaxWithdrawals] = useState<string>("2");
   const [adminMaxTotalWei, setAdminMaxTotalWei] = useState<string>("0");
   const handleSetTokenLimits = useCallback(async () => {
-    if (!eoaAddress || !vaultOwner || eoaAddress.toLowerCase() !== vaultOwner.toLowerCase()) {
-      setSetLimitsStatus("Only the vault owner can set limits.");
+    if (!client || !smartAccountAddress) {
+      setSetLimitsStatus("Complete Step 1 first (Connect & Create Smart Account).");
+      return;
+    }
+    if (ownerEoaAddress != null && eoaAddress !== ownerEoaAddress) {
+      setSetLimitsStatus("Connect with the wallet that created this smart account to set your limits.");
       return;
     }
     if (!MOCK_VAULT_ADDRESS || MOCK_VAULT_ADDRESS === "0x") {
@@ -617,20 +640,32 @@ export function useSessionKeys() {
     setLoading("setLimits");
     setSetLimitsStatus("");
     try {
-      const { sepolia: sep } = await import("@account-kit/infra");
-      await switchChainAsync({ chainId: sep.id });
-      const walletClient = await getWalletClient(config, { chainId: sep.id });
-      if (!walletClient?.account) {
-        setSetLimitsStatus("Connect wallet and try again.");
-        return;
-      }
-      const hash = await (walletClient as { writeContract: (args: unknown) => Promise<`0x${string}`> }).writeContract({
-        address: MOCK_VAULT_ADDRESS,
+      const setMyLimitsData = encodeFunctionData({
         abi: MOCK_VAULT_ABI,
-        functionName: "setTokenLimits",
+        functionName: "setMyTokenLimits",
         args: [ETH_TOKEN as `0x${string}`, maxW, maxTotal],
       });
-      setSetLimitsStatus(`Limits set. Tx: ${hash.slice(0, 10)}…`);
+      let preparedCalls = await client.prepareCalls({
+        calls: [{ to: MOCK_VAULT_ADDRESS, data: setMyLimitsData }],
+        from: smartAccountAddress as `0x${string}`,
+      });
+      const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
+      if (rpcUrl) {
+        const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+        preparedCalls = await stripInitCodeIfDeployed(publicClient, smartAccountAddress as `0x${string}`, preparedCalls);
+      }
+      const walletClient = await getWalletClient(config, { chainId: sepolia.id });
+      if (!walletClient) {
+        setSetLimitsStatus("Connect wallet and try again.");
+        setLoading(null);
+        return;
+      }
+      const { WalletClientSigner } = await import("@aa-sdk/core");
+      const ownerSigner = new WalletClientSigner(walletClient as never, "wallet");
+      const { signPreparedCalls } = await import("@account-kit/wallet-client");
+      const signedCalls = await signPreparedCalls(ownerSigner, preparedCalls);
+      const result = await client.sendPreparedCalls(signedCalls);
+      setSetLimitsStatus(`Your limits set. Call id: ${result.id ?? "—"}`);
       setRefreshBalanceTrigger((t) => t + 1);
     } catch (e) {
       const err = e as { message?: string };
@@ -638,7 +673,7 @@ export function useSessionKeys() {
     } finally {
       setLoading(null);
     }
-  }, [eoaAddress, vaultOwner, adminMaxWithdrawals, adminMaxTotalWei, config, switchChainAsync]);
+  }, [client, smartAccountAddress, ownerEoaAddress, eoaAddress, adminMaxWithdrawals, adminMaxTotalWei, config]);
 
   const connectWallet = useCallback(() => {
     connect({ connector: connectors[0] });
@@ -661,7 +696,9 @@ export function useSessionKeys() {
     step1Status,
     handleConnectAndCreateAccount,
 
-    // Session Key
+    // Session Key (only owner EOA can issue/revoke)
+    ownerEoaAddress,
+    isOwnerWallet: Boolean(eoaAddress && ownerEoaAddress && eoaAddress === ownerEoaAddress),
     sessionKeyAddress,
     permissions,
     step2Status,

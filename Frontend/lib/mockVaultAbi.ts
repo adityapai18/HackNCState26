@@ -98,6 +98,30 @@ export const MOCK_VAULT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "maxWithdrawals", type: "uint256" },
+      { internalType: "uint256", name: "maxTotalWithdrawable", type: "uint256" },
+    ],
+    name: "setMyTokenLimits",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "account", type: "address" },
+    ],
+    name: "getEffectiveLimits",
+    outputs: [
+      { internalType: "uint256", name: "maxWithdrawals", type: "uint256" },
+      { internalType: "uint256", name: "maxTotalWithdrawable", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
 
 /** Use address(0) for native ETH in balances/withdrawalCount/limits */
