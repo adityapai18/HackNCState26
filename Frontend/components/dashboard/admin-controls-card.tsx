@@ -60,29 +60,30 @@ export function AdminControlsCard({
               Settings
             </p>
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground/90">Max transactions</label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={adminMaxWithdrawals}
-                  onChange={(e) => setAdminMaxWithdrawals(e.target.value)}
-                  className="h-10"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground/90">Max total (wei)</label>
-                <Input
-                  type="text"
-                  value={adminMaxTotalWei}
-                  onChange={(e) => setAdminMaxTotalWei(e.target.value)}
-                  placeholder="0 = none"
-                  className="h-10"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground/90">Max duration (days)</label>
-                <div className="flex items-center gap-0 rounded-lg border border-input bg-background overflow-hidden h-10 w-full max-w-[140px]">
+              <div className="flex flex-nowrap items-end gap-3">
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <label className="text-[13px] font-medium text-foreground/90">Max transactions</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={adminMaxWithdrawals}
+                    onChange={(e) => setAdminMaxWithdrawals(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <label className="text-[13px] font-medium text-foreground/90">Max total (wei)</label>
+                  <Input
+                    type="text"
+                    value={adminMaxTotalWei}
+                    onChange={(e) => setAdminMaxTotalWei(e.target.value)}
+                    placeholder="0 = none"
+                    className="h-10"
+                  />
+                </div>
+                <div className="shrink-0 space-y-1.5 w-[140px]">
+                  <label className="text-[13px] font-medium text-foreground/90">Max duration (days)</label>
+                  <div className="flex items-center gap-0 rounded-lg border border-input bg-background overflow-hidden h-10 w-full">
                   <button
                     type="button"
                     onClick={() =>
@@ -118,6 +119,7 @@ export function AdminControlsCard({
                   >
                     <Plus className="h-4 w-4" />
                   </button>
+                </div>
                 </div>
               </div>
               <Button

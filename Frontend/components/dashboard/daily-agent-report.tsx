@@ -2,226 +2,185 @@
 
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { RefreshCw, FileDown } from "lucide-react";
+
+type Totals = {
+  date?: string;
+  range_label?: string;
+  wallet: string;
+  total_trades: number;
+  buy_count: number;
+  sell_count: number;
+  confirmed_count: number;
+  pending_count: number;
+  failed_count: number;
+  buy_volume_wei: string;
+  sell_volume_wei: string;
+  operational_runs?: number;
+};
+
+type Report = {
+  headline: string;
+  one_liner: string;
+  highlights: string[];
+  kpis: { label: string; value: string }[];
+  risks: string[];
+  next_steps: string[];
+  confidence: number;
+};
 
 type Resp = {
-  totals: {
-    date: string;
-    wallet: string;
-    total_trades: number;
-    buy_count: number;
-    sell_count: number;
-    confirmed_count: number;
-    pending_count: number;
-    failed_count: number;
-    buy_volume_wei: string;
-    sell_volume_wei: string;
-  };
-  report: {
-    headline: string;
-    one_liner: string;
-    highlights: string[];
-    kpis: { label: string; value: string }[];
-    risks: string[];
-    next_steps: string[];
-    confidence: number;
-  };
+  totals: Totals;
+  report?: Report;
 };
+
+const RANGES = [
+  { value: "1h", label: "Last 1 hour" },
+  { value: "6h", label: "Last 6 hours" },
+  { value: "12h", label: "Last 12 hours" },
+] as const;
 
 export function DailyAgentReportCard() {
   const { address } = useAccount();
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [range, setRange] = useState<"1h" | "6h" | "12h">("1h");
 
-  const date = new Date().toISOString().slice(0, 10);
-
-  const refresh = async () => {
+  const fetchReport = async (rangeParam: string) => {
     if (!address) return;
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/insights?wallet=${address}&date=${date}`);
+      const params = new URLSearchParams({
+        wallet: address,
+        refresh: "1",
+      });
+      if (rangeParam) params.set("range", rangeParam);
+      else params.set("date", new Date().toISOString().slice(0, 10));
+
+      const res = await fetch(`/api/insights?${params}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to fetch report");
       setData(json);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to fetch report");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed to fetch report");
     } finally {
       setLoading(false);
     }
   };
 
-  const redactWallets = (text: string) =>
-    text.replace(/0x[a-fA-F0-9]{10,}/g, "agent wallet");
-
-  const exportPdf = () => {
-    if (!data) return;
-
-    const esc = (s: string) =>
-      s
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-
-    const list = (items: string[]) =>
-      items?.length
-        ? `<ul>${items.map((i) => `<li>${esc(redactWallets(i))}</li>`).join("")}</ul>`
-        : "<p>None</p>";
-
-    const kpisHtml = data.report.kpis?.length
-      ? data.report.kpis
-          .map((k) => `<tr><td>${esc(redactWallets(k.label))}</td><td>${esc(redactWallets(k.value))}</td></tr>`)
-          .join("")
-      : `
-        <tr><td>Trades</td><td>${data.totals.total_trades}</td></tr>
-        <tr><td>BUY</td><td>${data.totals.buy_count}</td></tr>
-        <tr><td>SELL</td><td>${data.totals.sell_count}</td></tr>
-        <tr><td>Confirmed</td><td>${data.totals.confirmed_count}</td></tr>
-      `;
-
-    const html = `
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Daily Agent Report - ${esc(data.totals.date)}</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #111; }
-          h1 { margin: 0 0 8px 0; font-size: 24px; }
-          .muted { color: #555; margin-bottom: 16px; }
-          .section { margin-top: 18px; }
-          .section h2 { font-size: 14px; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.04em; color: #333; }
-          table { border-collapse: collapse; width: 100%; }
-          td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
-          ul { margin: 0; padding-left: 18px; }
-          li { margin: 4px 0; }
-        </style>
-      </head>
-      <body>
-        <h1>${esc(redactWallets(data.report.headline || "Daily Agent Report"))}</h1>
-        <div class="muted">${esc(redactWallets(data.report.one_liner || ""))}</div>
-        <div class="muted">Date: ${esc(data.totals.date)} | Confidence: ${Math.round((data.report.confidence ?? 0.6) * 100)}%</div>
-
-        <div class="section">
-          <h2>KPIs</h2>
-          <table>${kpisHtml}</table>
-        </div>
-
-        <div class="section">
-          <h2>Highlights</h2>
-          ${list(data.report.highlights || [])}
-        </div>
-
-        <div class="section">
-          <h2>Risks</h2>
-          ${list(data.report.risks || [])}
-        </div>
-
-        <div class="section">
-          <h2>Next Steps</h2>
-          ${list(data.report.next_steps || [])}
-        </div>
-      </body>
-      </html>
-    `;
-
-    const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 250);
-  };
+  const refresh = () => void fetchReport(range);
 
   useEffect(() => {
-    if (address) refresh();
+    if (address) fetchReport(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address]);
+  }, [address, range]);
+
+  const totals = data?.totals;
+  const totalTrades = totals?.total_trades ?? 0;
+  const successRate =
+    totalTrades > 0
+      ? Math.round(((totals?.confirmed_count ?? 0) / totalTrades) * 100)
+      : 100;
+  const buyWei = BigInt(totals?.buy_volume_wei ?? "0");
+  const sellWei = BigInt(totals?.sell_volume_wei ?? "0");
+  const netWei = buyWei - sellWei;
+  const netWeiStr =
+    netWei >= 0n ? `+${netWei.toString()} WEI` : `${netWei.toString()} WEI`;
+
+  const rangeLabel = RANGES.find((r) => r.value === range)?.label ?? range;
+  const report = data?.report;
+
+  const [exporting, setExporting] = useState(false);
+  const exportPdf = async () => {
+    if (!data?.totals) return;
+    setExporting(true);
+    try {
+      const res = await fetch("/api/insights/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totals: data.totals, report: data.report ?? null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const html = await res.text();
+      const w = window.open("", "_blank", "width=900,height=1200");
+      if (!w) return;
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(() => w.print(), 300);
+    } catch (e) {
+      console.error("Export failed:", e);
+      setErr(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="rounded-2xl border bg-card text-card-foreground shadow-sm">
-      <div className="flex items-center justify-between border-b px-5 py-4">
-        <div>
-          <div className="text-sm font-semibold">Agent Daily Report</div>
-          <div className="text-xs text-muted-foreground">{date}</div>
-        </div>
-        <button
-          className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
-          onClick={refresh}
+      <div className="flex flex-nowrap items-center gap-2 border-b px-4 py-3">
+        <span className="shrink-0 text-sm font-semibold">Agent Report</span>
+        <select
+          value={range}
+          onChange={(e) => setRange(e.target.value as "1h" | "6h" | "12h")}
           disabled={loading}
+          className="shrink-0 rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         >
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
-        <button
-          className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
-          onClick={exportPdf}
-          disabled={!data || loading}
-        >
-          Export PDF
-        </button>
+          {RANGES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            onClick={exportPdf}
+            disabled={!data?.totals || loading || exporting}
+          >
+            {exporting ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileDown className="h-3.5 w-3.5" />
+            )}
+            {exporting ? "Generating…" : "Export PDF"}
+          </button>
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border hover:bg-muted disabled:opacity-50"
+            onClick={refresh}
+            disabled={loading}
+            aria-label="Refresh report"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="px-5 py-4">
+      <div className="px-4 py-3">
         {!address ? (
-          <div className="text-sm text-muted-foreground">Connect your wallet to view the report.</div>
+          <p className="text-sm text-muted-foreground">Connect your wallet to view the report.</p>
         ) : err ? (
-          <div className="text-sm text-destructive">{err}</div>
-        ) : !data ? (
-          <div className="text-sm text-muted-foreground">Generating report…</div>
+          <p className="text-sm text-destructive">{err}</p>
+        ) : !totals ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-base font-semibold">{redactWallets(data.report.headline)}</div>
-                <div className="mt-1 text-sm text-muted-foreground">{redactWallets(data.report.one_liner)}</div>
-              </div>
-              <div className="rounded-full border px-3 py-1 text-xs font-semibold">
-                Confidence: {Math.round((data.report.confidence ?? 0.6) * 100)}%
-              </div>
-            </div>
-
-            {/* KPIs (Gemini-generated, fallback to totals) */}
-            {data.report.kpis?.length ? (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {data.report.kpis.slice(0, 8).map((k, i) => (
-                  <div key={i} className="rounded-xl border p-3">
-                    <div className="text-xs text-muted-foreground">{redactWallets(k.label)}</div>
-                    <div className="text-lg font-semibold">{redactWallets(k.value)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <MiniKpi label="Trades" value={String(data.totals.total_trades)} />
-                <MiniKpi label="BUY" value={String(data.totals.buy_count)} />
-                <MiniKpi label="SELL" value={String(data.totals.sell_count)} />
-                <MiniKpi label="Confirmed" value={String(data.totals.confirmed_count)} />
-              </div>
-            )}
-
-            {data.report.highlights?.length ? (
-              <Section title="Highlights">
-                <ul className="list-disc space-y-1 pl-5 text-sm">
-                  {data.report.highlights.map((h, i) => <li key={i}>{redactWallets(h)}</li>)}
-                </ul>
-              </Section>
-            ) : null}
-
-            {data.report.risks?.length ? (
-              <Section title="Risks / Issues">
-                <ul className="list-disc space-y-1 pl-5 text-sm">
-                  {data.report.risks.map((r, i) => <li key={i}>{redactWallets(r)}</li>)}
-                </ul>
-              </Section>
-            ) : null}
-
-            {data.report.next_steps?.length ? (
-              <Section title="Next Steps">
-                <ul className="list-disc space-y-1 pl-5 text-sm">
-                  {data.report.next_steps.map((n, i) => <li key={i}>{redactWallets(n)}</li>)}
-                </ul>
-              </Section>
-            ) : null}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+            <Kpi label="Total Trades Executed" value={String(totals.total_trades)} />
+            <Kpi label="Execution Success Rate" value={`${successRate}%`} />
+            <Kpi
+              label="Buy-to-Sell Ratio"
+              value={`${totals.buy_count} BUYs / ${totals.sell_count} SELLs`}
+            />
+            <Kpi label="Net Asset Flow (WEI)" value={netWeiStr} />
+            <Kpi
+              label="Operational Runs"
+              value={String(totals.operational_runs ?? 0)}
+              className="sm:col-span-2"
+            />
           </div>
         )}
       </div>
@@ -229,20 +188,21 @@ export function DailyAgentReportCard() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Kpi({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
-    <div className="rounded-xl border p-4">
-      <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function MiniKpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
+    <div className={`rounded-lg border border-border/60 bg-muted/20 px-3 py-2 ${className}`}>
+      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

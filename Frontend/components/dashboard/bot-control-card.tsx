@@ -102,7 +102,7 @@ function LogsDropdown({
   logEndRef,
 }: {
   logs: BotLogEntry[];
-  logEndRef: React.RefObject<HTMLDivElement | null>;
+  logEndRef: React.RefObject<HTMLDivElement>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -244,8 +244,15 @@ export function BotControlCard({
 
   const { data: myWalletBalance, refetch: refetchBalance } = useBalance({
     address: eoaAddress as `0x${string}` | undefined,
-    refetchInterval: 4000, // Real-time: refetch every 4s so balance updates after BUY/SELL
+    query: { refetchInterval: 4000 }, // Real-time: refetch every 4s so balance updates after BUY/SELL
   });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetchBalance();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [refetchBalance]);
 
   const isRunning = botStatus?.is_running ?? false;
   const isStarting = loading === "start" || fundingStatus !== null;
@@ -664,14 +671,20 @@ export function BotControlCard({
                     />
                     <Bar
                       dataKey="close"
-                      baseValue={(entry: { open: number }) => entry.open}
                       fill="transparent"
                       barSize={8}
                       radius={0}
                       isAnimationActive={false}
                       fillOpacity={1}
-                      shape={(props: { x: number; y: number; width: number; height: number; payload: { open: number; close: number } }) => {
-                        const { x, y, width, height, payload } = props;
+                      shape={(props: unknown) => {
+                        const { x, y, width, height, payload } = props as {
+                          x: number;
+                          y: number;
+                          width: number;
+                          height: number;
+                          payload: { open: number; close: number };
+                        };
+
                         const isUp = payload.close >= payload.open;
                         return (
                           <g>

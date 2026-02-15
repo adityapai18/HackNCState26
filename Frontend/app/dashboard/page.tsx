@@ -54,9 +54,9 @@ export default function DashboardPage() {
         {...walletProps}
       />
 
-      <main className="flex min-h-0 flex-1 w-full flex-col gap-5 overflow-y-auto overflow-x-visible px-5 py-6 md:flex-row md:px-8 md:py-8">
-        {/* Left 1/3: Session key, Limits */}
-        <aside className="flex w-full shrink-0 flex-col gap-5 md:w-1/3 md:min-w-[320px] md:max-w-[400px]">
+      <main className="flex min-h-0 flex-1 w-full flex-col gap-5 overflow-hidden px-5 py-6 md:flex-row md:px-8 md:py-8">
+        {/* Left 1/3: Session key, Limits — scrolls if content is tall */}
+        <aside className="flex min-h-0 w-full shrink-0 flex-col gap-5 overflow-y-auto md:w-1/3 md:min-w-[320px] md:max-w-[400px]">
           <SessionKeyPanel
             sessionKeyAddress={sk.sessionKeyAddress}
             smartAccountAddress={sk.smartAccountAddress ?? null}
@@ -83,13 +83,13 @@ export default function DashboardPage() {
               onSetLimits={sk.handleSetTokenLimits}
             />
           )}
-        <div className="mt-5">
+        <div className="mt-1">
           <DailyAgentReportCard />
         </div>
         </aside>
 
-        {/* Center 2/3: Trade agent control — no internal scroll */}
-        <section className="min-w-0 flex-1 pb-6">
+        {/* Center 2/3: Trade agent control — section scrolls, not the whole page */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-6">
             <BotControlCard
               botInfo={bot.botInfo}
               botStatus={bot.botStatus}
