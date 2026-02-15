@@ -44,9 +44,6 @@ class BotRunner:
         self.smart_account_address = None
         self.bot_recipient_address = None
         self.stop_alert_email_sent = False
-<<<<<<< HEAD
-        self.run_id = None
-=======
         self.price_history = []
         self.trade_history = []
 
@@ -54,7 +51,6 @@ class BotRunner:
         """POC: synthetic price for chart (not real market data)."""
         base = 100.0 + self.iterations * 0.4 + (self.buy_count - self.sell_count) * 2.0
         return round(base + random.uniform(-0.5, 0.5), 2)
->>>>>>> adi/ui
 
     def start(self, session_key_expiry, session_key_address=None, vault_address=None, smart_account_address=None, bot_recipient_address=None):
         with self._lock:

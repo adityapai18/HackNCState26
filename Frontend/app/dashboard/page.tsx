@@ -8,6 +8,7 @@ import { AccountDialog } from "@/components/dashboard/account-dialog";
 import { SessionKeyPanel } from "@/components/dashboard/session-key-panel";
 import { AdminControlsCard } from "@/components/dashboard/admin-controls-card";
 import { BotControlCard } from "@/components/dashboard/bot-control-card";
+import { DailyAgentReportCard } from "@/components/dashboard/daily-agent-report";
 
 export default function DashboardPage() {
   const sk = useSessionKeys();
@@ -65,6 +66,7 @@ export default function DashboardPage() {
             isOwnerWallet={sk.isOwnerWallet}
             onIssueSessionKey={sk.handleIssueSessionKey}
           />
+
           {sk.smartAccountAddress != null && (
             <AdminControlsCard
               vaultOwner={sk.vaultOwner}
@@ -81,6 +83,9 @@ export default function DashboardPage() {
               onSetLimits={sk.handleSetTokenLimits}
             />
           )}
+        <div className="mt-5">
+          <DailyAgentReportCard />
+        </div>
         </aside>
 
         {/* Center 2/3: Trade agent control — no internal scroll */}
