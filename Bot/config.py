@@ -5,9 +5,8 @@ load_dotenv()
 
 # --- Credentials ---
 # When PRIVATE_KEY is set: bot can sign (swap, vault). When not set: signal-only mode (no key, no swap).
-# BOT_RECIPIENT_ADDRESS: where vault withdrawals go when in signal-only mode (frontend uses this for withdrawToBot).
+# bot_recipient_address is provided by the frontend when starting the bot (POST /bot/start).
 PRIVATE_KEY = os.getenv("PRIVATE_KEY", "").strip()
-BOT_RECIPIENT_ADDRESS = os.getenv("BOT_RECIPIENT_ADDRESS", "").strip() or "0xCBE70296e5f737e97ea44e5BcdE8482DD00067A7"
 MOCK_VAULT_ADDRESS = os.getenv("MOCK_VAULT_ADDRESS", "")
 SESSION_KEY_ADDRESS = os.getenv("SESSION_KEY_ADDRESS", "")
 RPC_URL = os.getenv("RPC_URL")

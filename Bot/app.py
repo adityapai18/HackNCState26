@@ -18,7 +18,7 @@ runner = BotRunner()
 
 @app.route("/bot/info", methods=["GET"])
 def bot_info():
-    """Return bot recipient address and balance. No private key from frontend; uses env only or BOT_RECIPIENT_ADDRESS."""
+    """Return bot address and balance when PRIVATE_KEY is set; otherwise empty address (recipient comes from frontend at start)."""
     try:
         w3 = get_web3()
         if config.PRIVATE_KEY:
@@ -26,8 +26,8 @@ def bot_info():
             addr = account.address
             eth_balance_wei = w3.eth.get_balance(addr)
         else:
-            addr = config.BOT_RECIPIENT_ADDRESS
-            eth_balance_wei = w3.eth.get_balance(addr)
+            addr = ""
+            eth_balance_wei = 0
         return jsonify({
             "bot_recipient_address": addr,
             "wallet_address": addr,
@@ -63,8 +63,12 @@ def bot_start():
     session_key_expiry = data.get("session_key_expiry")
     session_key_address = data.get("session_key_address")
     smart_account_address = data.get("smart_account_address")
+    bot_recipient_address = (data.get("bot_recipient_address") or "").strip() or None
     # Vault address always from bot env; session key from frontend (UI) when starting the bot
     vault_address = config.MOCK_VAULT_ADDRESS
+
+    if bot_recipient_address is not None and not Web3.is_address(bot_recipient_address):
+        return jsonify({"status": "error", "message": "Invalid bot_recipient_address (must be 0x address)"}), 400
 
     if session_key_expiry is not None:
         try:
@@ -74,7 +78,7 @@ def bot_start():
         if session_key_expiry < time.time():
             return jsonify({"status": "error", "message": "Session key expiry is in the past"}), 400
 
-    runner.start(session_key_expiry, session_key_address, vault_address, smart_account_address)
+    runner.start(session_key_expiry, session_key_address, vault_address, smart_account_address, bot_recipient_address)
     return jsonify({"status": "ok", "message": "Bot started"})
 
 

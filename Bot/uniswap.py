@@ -8,12 +8,18 @@ import config
 ABI_DIR = os.path.join(os.path.dirname(__file__), "abi")
 MAX_UINT256 = 2**256 - 1
 
+# Hardcoded fallbacks when env / RPC not set (e.g. signal-only, no private key)
+DEFAULT_RPC_URL = "https://rpc.sepolia.org"
+DEFAULT_GAS_WEI = 2050  # 20 gwei
+SEPOLIA_CHAIN_ID = 11155111
+
 
 def get_web3():
-    """Create a Web3 instance connected to the configured RPC."""
-    w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
+    """Create a Web3 instance connected to the configured RPC. Uses hardcoded Sepolia RPC if env not set."""
+    rpc = (getattr(config, "RPC_URL", None) or os.getenv("RPC_URL") or "").strip() or DEFAULT_RPC_URL
+    w3 = Web3(Web3.HTTPProvider(rpc))
     if not w3.is_connected():
-        raise ConnectionError(f"Failed to connect to RPC: {config.RPC_URL}")
+        raise ConnectionError(f"Failed to connect to RPC: {rpc}")
     return w3
 
 
@@ -32,17 +38,50 @@ def load_abi(filename):
         return json.load(f)
 
 
+def _gas_fee(w3):
+    """Gas fee for txs; hardcoded fallback when no RPC or gas_price unavailable."""
+    try:
+        gp = w3.eth.gas_price
+        if gp and gp > 0:
+            return gp * 2
+    except Exception:
+        pass
+    return DEFAULT_GAS_WEI
+
+
+def send_eth(w3, account, to_address, amount_wei):
+    """Send native ETH from account to to_address. Returns receipt."""
+    to_address = Web3.to_checksum_address(to_address)
+    nonce = w3.eth.get_transaction_count(account.address)
+    max_fee = _gas_fee(w3)
+    # Use explicit Sepolia chain ID so signer and RPC match (11155111)
+    tx = {
+        "from": account.address,
+        "to": to_address,
+        "value": amount_wei,
+        "nonce": nonce,
+        "gas": 21000,
+        "maxFeePerGas": max_fee,
+        "maxPriorityFeePerGas": min(Web3.to_wei(2, "gwei"), max_fee),
+        "chainId": SEPOLIA_CHAIN_ID,
+    }
+    signed = account.sign_transaction(tx)
+    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    return w3.eth.wait_for_transaction_receipt(tx_hash)
+
+
 def unwrap_weth(w3, account, amount_wei):
     """Unwrap WETH to native ETH. Sends ETH to account."""
     weth_address = Web3.to_checksum_address(config.TOKENS["WETH"]["address"])
     weth_abi = [{"inputs": [{"name": "wad", "type": "uint256"}], "name": "withdraw", "outputs": [], "stateMutability": "nonpayable", "type": "function"}]
     weth = w3.eth.contract(address=weth_address, abi=weth_abi)
     nonce = w3.eth.get_transaction_count(account.address)
+    max_fee = _gas_fee(w3)
     tx = weth.functions.withdraw(amount_wei).build_transaction({
         "from": account.address,
         "nonce": nonce,
-        "maxFeePerGas": w3.eth.gas_price * 2,
-        "maxPriorityFeePerGas": w3.to_wei(2, "gwei"),
+        "maxFeePerGas": max_fee,
+        "maxPriorityFeePerGas": min(Web3.to_wei(2, "gwei"), max_fee),
     })
     signed = account.sign_transaction(tx)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -77,13 +116,14 @@ def check_and_approve(w3, account, token_address, spender_address, amount):
 
     print(f"  Approving {token_address} for spending...")
     nonce = w3.eth.get_transaction_count(account.address)
+    max_fee = _gas_fee(w3)
     tx = token.functions.approve(
         Web3.to_checksum_address(spender_address), MAX_UINT256
     ).build_transaction({
         "from": account.address,
         "nonce": nonce,
-        "maxFeePerGas": w3.eth.gas_price * 2,
-        "maxPriorityFeePerGas": w3.to_wei(2, "gwei"),
+        "maxFeePerGas": max_fee,
+        "maxPriorityFeePerGas": min(Web3.to_wei(2, "gwei"), max_fee),
     })
 
     signed = account.sign_transaction(tx)
@@ -161,12 +201,13 @@ def execute_swap(w3, account, token_in, token_out, fee, amount_in, slippage_perc
     tx_value = amount_in if is_native_eth else 0
 
     nonce = w3.eth.get_transaction_count(account.address)
+    max_fee = _gas_fee(w3)
     tx = router.functions.exactInputSingle(params).build_transaction({
         "from": account.address,
         "value": tx_value,
         "nonce": nonce,
-        "maxFeePerGas": w3.eth.gas_price * 2,
-        "maxPriorityFeePerGas": w3.to_wei(2, "gwei"),
+        "maxFeePerGas": max_fee,
+        "maxPriorityFeePerGas": min(Web3.to_wei(2, "gwei"), max_fee),
     })
 
     signed = account.sign_transaction(tx)

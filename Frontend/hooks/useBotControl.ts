@@ -7,6 +7,7 @@ const BOT_API_URL =
 
 export interface BotInfo {
   wallet_address: string;
+  bot_recipient_address?: string; // Where vault withdrawals go (same as wallet_address when no key)
   eth_balance_wei: string;
   eth_balance: string;
   network: string;
@@ -22,6 +23,8 @@ export interface BotLastTrade {
 export interface PendingWithdraw {
   amount_wei: string;
   reason: string;
+  /** When set (e.g. BUY to random wallet), frontend sends vault withdrawal to this address */
+  recipient_address?: string;
 }
 
 export interface BotStatus {
@@ -36,6 +39,8 @@ export interface BotStatus {
   session_key_address: string | null;
   vault_address: string | null;
   smart_account_address: string | null;
+  /** Recipient address passed at start (from frontend); used for vault withdrawals in signal-only mode */
+  bot_recipient_address: string | null;
   started_at: number | null;
   iterations: number;
   pending_withdraw: PendingWithdraw | null;
@@ -55,6 +60,8 @@ export interface StartBotParams {
   session_key_address?: string;
   vault_address?: string;
   smart_account_address?: string;
+  /** Where vault withdrawals go in signal-only mode (from frontend when starting bot) */
+  bot_recipient_address?: string;
 }
 
 export type FundingStatus = "starting" | null;

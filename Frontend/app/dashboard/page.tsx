@@ -65,6 +65,7 @@ export default function DashboardPage() {
         <div className="grid gap-5 md:grid-cols-2">
           <SessionKeyPanel
             sessionKeyAddress={sk.sessionKeyAddress}
+            smartAccountAddress={sk.smartAccountAddress ?? null}
             step2Status={sk.step2Status}
             loading={sk.loading}
             hasSmartAccount={!!sk.smartAccountAddress}
@@ -95,6 +96,7 @@ export default function DashboardPage() {
             sessionKeyExpiry={sk.sessionKeyExpiry}
             sessionKeyAddress={sk.sessionKeyAddress}
             smartAccountAddress={sk.smartAccountAddress}
+            eoaAddress={sk.eoaAddress ?? null}
             vaultAddress={sk.mockVaultAddress || ""}
             vaultBalanceWei={sk.vaultBalanceWei}
             onStart={bot.startBot}

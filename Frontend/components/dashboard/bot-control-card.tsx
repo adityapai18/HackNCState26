@@ -16,8 +16,10 @@ import {
   AlertTriangle,
   Terminal,
   XCircle,
+  Wallet,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useBalance } from "wagmi";
 import type { BotInfo, BotStatus, BotLogEntry, StartBotParams, FundingStatus } from "@/hooks/useBotControl";
 
 interface BotControlCardProps {
@@ -31,6 +33,7 @@ interface BotControlCardProps {
   sessionKeyExpiry: number | null;
   sessionKeyAddress: string | null;
   smartAccountAddress: string | null;
+  eoaAddress: string | null;
   vaultAddress: string;
   vaultBalanceWei: bigint | null;
   onStart: (params: StartBotParams) => Promise<boolean>;
@@ -56,10 +59,16 @@ function SignalBadge({ signal }: { signal: string | null }) {
           <TrendingDown className="mr-1 h-3 w-3" /> SELL
         </Badge>
       );
+    case "DEPOSIT":
+      return (
+        <Badge className="bg-blue-600 text-white">
+          <Wallet className="mr-1 h-3 w-3" /> DEPOSIT
+        </Badge>
+      );
     default:
       return (
         <Badge variant="secondary">
-          <Minus className="mr-1 h-3 w-3" /> HOLD
+          <Minus className="mr-1 h-3 w-3" /> {signal}
         </Badge>
       );
   }
@@ -80,6 +89,7 @@ export function BotControlCard({
   sessionKeyExpiry,
   sessionKeyAddress,
   smartAccountAddress,
+  eoaAddress,
   vaultAddress,
   vaultBalanceWei,
   onStart,
@@ -89,52 +99,72 @@ export function BotControlCard({
   onRefreshBalance,
   pendingWithdraw,
 }: BotControlCardProps) {
-  const [copied, setCopied] = useState(false);
+  const [copiedMy, setCopiedMy] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const pendingWithdrawHandledRef = useRef<string | null>(null);
+
+  const { data: myWalletBalance, refetch: refetchBalance } = useBalance({
+    address: eoaAddress as `0x${string}` | undefined,
+    refetchInterval: 4000, // Real-time: refetch every 4s so balance updates after BUY/SELL
+  });
 
   const isRunning = botStatus?.is_running ?? false;
   const isStarting = loading === "start" || fundingStatus !== null;
 
-  // When bot signals pending_withdraw (BUY needs vault withdraw), frontend withdraws via session key
+  // When bot signals pending_withdraw: use recipient from payload (e.g. BUY = random wallet) or fallback to API recipient
+  const defaultRecipient = botStatus?.bot_recipient_address ?? eoaAddress ?? undefined;
   useEffect(() => {
-    if (!pendingWithdraw || !botInfo?.wallet_address) return;
+    const recipient = pendingWithdraw?.recipient_address ?? defaultRecipient;
+    if (!pendingWithdraw || !recipient) return;
     const key = `${pendingWithdraw.amount_wei}-${pendingWithdraw.reason}`;
     if (pendingWithdrawHandledRef.current === key) return;
     pendingWithdrawHandledRef.current = key;
-    withdrawToBot(BigInt(pendingWithdraw.amount_wei), botInfo.wallet_address).catch(() => {
+    withdrawToBot(BigInt(pendingWithdraw.amount_wei), recipient).catch(() => {
       pendingWithdrawHandledRef.current = null;
     });
-  }, [pendingWithdraw, botInfo?.wallet_address, withdrawToBot]);
+  }, [pendingWithdraw, defaultRecipient, withdrawToBot]);
 
   useEffect(() => {
     if (!pendingWithdraw) pendingWithdrawHandledRef.current = null;
   }, [pendingWithdraw]);
 
+  // Refetch wallet balance when bot reports a new trade (BUY/SELL) so My Wallet updates in real time
+  const lastTradeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = botStatus?.last_trade
+      ? `${botStatus.last_trade.signal}-${botStatus.last_trade.tx_hash}-${botStatus.last_trade.timestamp}`
+      : null;
+    if (key && key !== lastTradeRef.current) {
+      lastTradeRef.current = key;
+      refetchBalance();
+    }
+  }, [botStatus?.last_trade, refetchBalance]);
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  const handleCopy = () => {
-    if (botInfo?.wallet_address) {
-      navigator.clipboard.writeText(botInfo.wallet_address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleCopyMyWallet = () => {
+    if (eoaAddress) {
+      navigator.clipboard.writeText(eoaAddress);
+      setCopiedMy(true);
+      setTimeout(() => setCopiedMy(false), 2000);
     }
   };
 
   const handleStart = () => {
+    if (!eoaAddress) return;
     const params: StartBotParams = {
       session_key_expiry: sessionKeyExpiry ?? undefined,
       session_key_address: sessionKeyAddress ?? undefined,
       smart_account_address: smartAccountAddress ?? undefined,
       vault_address: vaultAddress || undefined,
+      bot_recipient_address: eoaAddress,
     };
-    if (!botInfo) return;
     onStart(params);
   };
 
-  const canStart = botInfo && hasSessionKey && vaultAddress && sessionKeyAddress;
+  const canStart = botInfo && hasSessionKey && vaultAddress && sessionKeyAddress && eoaAddress;
 
   return (
     <Card className="md:col-span-2">
@@ -151,40 +181,48 @@ export function BotControlCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Bot wallet info */}
-        {botInfo ? (
-          <div className="rounded-lg bg-muted/50 p-4 space-y-2">
+        {/* My wallet (MetaMask / EOA) */}
+        {eoaAddress ? (
+          <div className="rounded-lg bg-muted/50 p-4 space-y-2 border border-border/50">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Wallet className="h-3.5 w-3.5" />
+              My Wallet
+            </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-muted-foreground">Bot Wallet</p>
+                <p className="text-xs text-muted-foreground">Address</p>
                 <p className="font-mono text-sm">
-                  {truncateAddress(botInfo.wallet_address)}
+                  {truncateAddress(eoaAddress)}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopyMyWallet}>
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            {copied && <p className="text-xs text-green-500">Copied!</p>}
-            <div className="flex items-center justify-between">
+            {copiedMy && <p className="text-xs text-green-500">Copied!</p>}
+            <div className="flex items-center gap-6 flex-wrap">
               <div>
-                <p className="text-xs text-muted-foreground">Bot ETH Balance</p>
-                <p className="font-mono text-sm">{botInfo.eth_balance} ETH</p>
+                <p className="text-xs text-muted-foreground">ETH Balance</p>
+                <p className="font-mono text-sm">
+                  {myWalletBalance?.formatted ?? "—"} ETH
+                </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Vault Balance</p>
                 <p className="font-mono text-sm">
-                  {vaultBalanceWei !== null ? `${vaultBalanceWei} wei` : "---"}
+                  {vaultBalanceWei !== null
+                    ? `${Number(vaultBalanceWei) / 1e18} ETH`
+                    : "—"}
                 </p>
               </div>
             </div>
           </div>
-        ) : (
-          <div className="rounded-lg bg-muted/50 p-4 text-center">
-            <p className="text-xs text-muted-foreground">
-              Bot API not reachable. Start the Flask server.
-            </p>
-          </div>
+        ) : null}
+
+        {!botInfo && (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            Bot API not reachable. Start the Flask server to control the bot.
+          </p>
         )}
 
         {pendingWithdraw && (
@@ -287,9 +325,7 @@ export function BotControlCard({
               <div className="text-right">
                 <p className="text-xs text-muted-foreground">Trades</p>
                 <p className="font-mono text-sm">
-                  {botStatus.buy_count != null || botStatus.sell_count != null
-                    ? `BUY: ${botStatus.buy_count ?? 0} · SELL: ${botStatus.sell_count ?? 0}`
-                    : botStatus.total_trades}
+                  BUY: {botStatus.buy_count ?? 0} · SELL: {botStatus.sell_count ?? 0}
                 </p>
               </div>
               <div className="text-right">

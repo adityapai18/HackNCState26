@@ -8,6 +8,7 @@ import { Loader2, KeyRound, ShieldCheck, Lock } from "lucide-react";
 
 interface SessionKeyPanelProps {
   sessionKeyAddress: string | null;
+  smartAccountAddress: string | null;
   step2Status: string;
   loading: string | null;
   hasSmartAccount: boolean;
@@ -17,6 +18,7 @@ interface SessionKeyPanelProps {
 
 export function SessionKeyPanel({
   sessionKeyAddress,
+  smartAccountAddress,
   step2Status,
   loading,
   hasSmartAccount,
@@ -69,6 +71,24 @@ export function SessionKeyPanel({
 
         {/* Separator */}
         <div className="my-4 h-px bg-border/50" />
+
+        {/* Smart account address */}
+        {smartAccountAddress && (
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                Smart account
+              </p>
+              <code className="mt-1 block truncate font-mono text-[13px] text-foreground/90">
+                {truncateAddress(smartAccountAddress, 8)}
+              </code>
+            </div>
+            <CopyButton
+              value={smartAccountAddress}
+              className="h-8 w-8 shrink-0 rounded-lg border border-border/60 transition-colors hover:bg-muted"
+            />
+          </div>
+        )}
 
         {/* Key state */}
         {sessionKeyAddress ? (
