@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount, useConnect, useDisconnect, useConfig, useSwitchChain } from "wagmi";
 import { getWalletClient } from "@wagmi/core";
 import { createPublicClient, http, encodeFunctionData, getAbiItem, getFunctionSelector, toHex, parseEther, type Hex, type PublicClient } from "viem";
@@ -44,7 +44,7 @@ export interface VaultEvent {
 
 export function useSessionKeys() {
   const config = useConfig();
-  const { address: eoaAddress, isConnected } = useAccount();
+  const { address: eoaAddress, isConnected, chainId } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
@@ -74,11 +74,15 @@ export function useSessionKeys() {
   const [setLimitsStatus, setSetLimitsStatus] = useState<string>("");
   const [withdrawToAddress, setWithdrawToAddress] = useState<string>("");
   const [withdrawAmountWei, setWithdrawAmountWei] = useState<string>("1");
+  const [addGasStatus, setAddGasStatus] = useState<string>("");
+  const [smartAccountLoading, setSmartAccountLoading] = useState(false);
 
   // Track events for charts
   const [vaultEvents, setVaultEvents] = useState<VaultEvent[]>([]);
+  const initAccountRef = useRef(false);
 
   const DEPOSIT_AMOUNT_WEI = 100000000000000n; // 0.0001 ETH
+  const MIN_GAS_WEI = 10_000_000_000_000_000n; // 0.01 ETH
 
   const addEvent = useCallback((event: VaultEvent) => {
     setVaultEvents((prev) => [...prev, event]);
@@ -100,6 +104,8 @@ export function useSessionKeys() {
   // Clear smart account and session key state when wallet disconnects
   useEffect(() => {
     if (eoaAddress != null) return;
+    initAccountRef.current = false;
+    setSmartAccountLoading(false);
     setClient(null);
     setSmartAccountAddress(null);
     setOwnerEoaAddress(null);
@@ -107,6 +113,44 @@ export function useSessionKeys() {
     setSessionKeyAddress(null);
     setPermissions(null);
   }, [eoaAddress]);
+
+  // On dashboard load: when connected but no client, fetch smart account info (requestAccount)
+  useEffect(() => {
+    if (!eoaAddress || client != null || initAccountRef.current) return;
+    const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    const sepoliaRpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+    if (!apiKey && !sepoliaRpcUrl?.trim()) return;
+    initAccountRef.current = true;
+    setSmartAccountLoading(true);
+    (async () => {
+      try {
+        const { createSmartWalletClient } = await import("@account-kit/wallet-client");
+        const { alchemy, sepolia } = await import("@account-kit/infra");
+        const { WalletClientSigner } = await import("@aa-sdk/core");
+        // Ensure wallet is on Sepolia so viem/account-kit don't throw chainId mismatch
+        if (chainId !== undefined && chainId !== sepolia.id) {
+          await switchChainAsync({ chainId: sepolia.id });
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        const walletClient = await getWalletClient(config, { chainId: sepolia.id, assertChainId: false });
+        if (!walletClient?.account) return;
+        const rpcUrl = sepoliaRpcUrl?.trim() || (apiKey ? `https://eth-sepolia.g.alchemy.com/v2/${apiKey}` : "");
+        const chainAgnosticUrl = (apiKey ? `https://api.g.alchemy.com/v2/${apiKey}` : null) || sepoliaRpcUrl?.trim() || rpcUrl;
+        if (!rpcUrl) return;
+        const transport = alchemy({ rpcUrl, chainAgnosticUrl });
+        const signer = new WalletClientSigner(walletClient as never, "wallet");
+        const smartWalletClient = createSmartWalletClient({ transport, chain: sepolia, signer });
+        const account = await smartWalletClient.requestAccount();
+        setClient(smartWalletClient);
+        setSmartAccountAddress(account.address);
+        setOwnerEoaAddress(eoaAddress);
+      } catch {
+        initAccountRef.current = false;
+      } finally {
+        setSmartAccountLoading(false);
+      }
+    })();
+  }, [eoaAddress, client, config, chainId, switchChainAsync]);
 
   // Read vault balance, effective limits for this smart account, and per-session-key totals
   useEffect(() => {
@@ -319,6 +363,32 @@ export function useSessionKeys() {
       setLoading(null);
     }
   }, [client, smartAccountAddress, ownerEoaAddress, eoaAddress, log]);
+
+  const handleAddGasToSmartAccount = useCallback(async () => {
+    if (!smartAccountAddress) {
+      setAddGasStatus("No smart account.");
+      return;
+    }
+    setLoading("addGas");
+    setAddGasStatus("Adding gas…");
+    try {
+      await switchChainAsync({ chainId: sepolia.id });
+      const walletClient = await getWalletClient(config, { chainId: sepolia.id, assertChainId: false });
+      if (!walletClient?.account) throw new Error("Wallet unavailable.");
+      await walletClient.sendTransaction({
+        account: walletClient.account,
+        chain: sepolia,
+        to: smartAccountAddress as `0x${string}`,
+        value: MIN_GAS_WEI,
+      });
+      setAddGasStatus("Added 0.01 ETH. Check ping again.");
+    } catch (e) {
+      const msg = (e as { message?: string })?.message ?? String(e);
+      setAddGasStatus("Failed: " + msg);
+    } finally {
+      setLoading(null);
+    }
+  }, [smartAccountAddress, config, switchChainAsync]);
 
   const handleTestPing = useCallback(async () => {
     if (!client || !smartAccountAddress || !sessionKeySigner || !permissions) {
@@ -722,6 +792,10 @@ export function useSessionKeys() {
     pingStatus,
     handleTestPing,
 
+    // Add gas (for dashboard status bar)
+    addGasStatus,
+    handleAddGasToSmartAccount,
+
     // Withdraw
     withdrawStatus,
     withdrawalCount,
@@ -752,6 +826,7 @@ export function useSessionKeys() {
 
     // Loading state
     loading,
+    smartAccountLoading,
 
     // Events for charts
     vaultEvents,
