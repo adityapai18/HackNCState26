@@ -100,6 +100,32 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Valkey Setup (macOS)
+
+Install Valkey:
+
+```bash
+brew install valkey
+```
+
+Run Valkey as a background service:
+
+```bash
+brew services start valkey
+```
+
+Check service status:
+
+```bash
+brew services info valkey
+```
+
+Stop the service:
+
+```bash
+brew services stop valkey
+```
+
 ### Configuration
 
 Copy the example env and fill in your values:

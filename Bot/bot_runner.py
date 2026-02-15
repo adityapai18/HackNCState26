@@ -8,7 +8,9 @@ from web3 import Web3
 import config
 from bot_logger import info as log_info, warning as log_warn, error as log_err
 from notifier import send_bot_stop_email
+from trade_store import create_trade, start_run, stop_run
 from uniswap import get_web3, get_account, send_eth
+from valkey_client import valkey, valkey_ping
 
 # POC: 10 wei. BUY = vault -> your wallet (same as before). SELL = bot wallet -> your wallet.
 POC_AMOUNT_WEI = 10
@@ -41,6 +43,7 @@ class BotRunner:
         self.smart_account_address = None
         self.bot_recipient_address = None
         self.stop_alert_email_sent = False
+        self.run_id = None
 
     def start(self, session_key_expiry, session_key_address=None, vault_address=None, smart_account_address=None, bot_recipient_address=None):
         with self._lock:
@@ -66,6 +69,7 @@ class BotRunner:
             self.sell_count = 0
             self.stop_reason = None
             self.stop_alert_email_sent = False
+            self.run_id = None
 
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
@@ -151,6 +155,11 @@ class BotRunner:
                 self.is_running = False
                 return
 
+            assert valkey_ping(), "Valkey not reachable"
+            user_wallet = recipient_address
+            self.run_id = start_run(user_wallet, buy_amount_wei=POC_AMOUNT_WEI)
+            log_info(f"Valkey run started: {self.run_id}")
+
             log_info("POC bot started: BUY = vault→your wallet, SELL = bot wallet→your wallet (10 wei)")
 
             amount_wei = POC_AMOUNT_WEI
@@ -204,10 +213,20 @@ class BotRunner:
                             "timestamp": time.time(),
                             "amount": str(amount_wei),
                         }
+                        create_trade(
+                            run_id=self.run_id,
+                            user_wallet=user_wallet,
+                            side="BUY",
+                            amount_wei=amount_wei,
+                            tx_ref=tx_hash,
+                            to_wallet=user_wallet,
+                            meta={"buy_seq": self.buy_count},
+                        )
                     else:
                         log_err(f"BUY #{tx_num}: timed out waiting for vault withdrawal (60s)")
                         self.error = "Vault withdrawal timeout"
                         self.stop_reason = f"Stopped after {self.total_trades} trades (timeout)"
+                        valkey.hincrby(f"{self.run_id}:metrics", "buy_timeout", 1)
                         self._send_stop_alert_once(self.stop_reason)
                         break
                 else:
@@ -220,7 +239,7 @@ class BotRunner:
                     try:
                         account = get_account(w3)
                         send_eth(w3, account, recipient_address, amount_wei)
-                        tx_hash = f"sell-{uuid.uuid4().hex[:12]}"
+                        tx_hash = f"bot-sell-{uuid.uuid4().hex[:12]}"
                         log_info(f"SELL #{tx_num}: sent {amount_wei} wei from bot wallet to your wallet ({recipient_address[:14]}...)")
                         self.total_trades += 1
                         self.sell_count += 1
@@ -230,6 +249,15 @@ class BotRunner:
                             "timestamp": time.time(),
                             "amount": str(amount_wei),
                         }
+                        create_trade(
+                            run_id=self.run_id,
+                            user_wallet=user_wallet,
+                            side="SELL",
+                            amount_wei=amount_wei,
+                            tx_ref=tx_hash,
+                            to_wallet=user_wallet,
+                            meta={"sell_seq": self.sell_count},
+                        )
                     except Exception as e:
                         log_err(f"SELL #{tx_num}: failed — {e}")
                         self.error = str(e)
@@ -253,6 +281,18 @@ class BotRunner:
             self._send_stop_alert_once(self.error)
         finally:
             reason = self.stop_reason or (f"Session key expired" if self.session_key_expired else (self.error or "User stopped"))
+            if self.run_id:
+                stop_reason = "POC_COMPLETE"
+                if self.session_key_expired:
+                    stop_reason = "SESSION_KEY_EXPIRED"
+                elif self.error:
+                    stop_reason = "ERROR"
+                if "timeout" in reason.lower():
+                    stop_reason = "TIMEOUT"
+                try:
+                    stop_run(self.run_id, reason=stop_reason)
+                except Exception as e:
+                    log_warn(f"Valkey stop_run failed: {e}")
             # Also notify on graceful completion (e.g., full POC cycle done).
             is_graceful_complete = isinstance(reason, str) and reason.startswith("POC complete")
             self._send_stop_alert_once(reason, force=is_graceful_complete)
