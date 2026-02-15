@@ -1,3 +1,4 @@
+import random
 import threading
 import time
 import traceback
@@ -10,12 +11,12 @@ from bot_logger import info as log_info, warning as log_warn, error as log_err
 from notifier import send_bot_stop_email
 from uniswap import get_web3, get_account, send_eth
 
-# POC: 10 wei. BUY = vault -> your wallet (same as before). SELL = bot wallet -> your wallet.
+# Small amount per trade (wei). BUY = vault → recipient; SELL = bot wallet → recipient.
 POC_AMOUNT_WEI = 10
 
 
 class BotRunner:
-    """POC: requests vault -> recipient transfers (10 wei). No swap logic."""
+    """Agent: vault withdrawals (BUY) and wallet sends (SELL). No swap logic."""
 
     def __init__(self):
         self._thread = None
@@ -41,6 +42,13 @@ class BotRunner:
         self.smart_account_address = None
         self.bot_recipient_address = None
         self.stop_alert_email_sent = False
+        self.price_history = []
+        self.trade_history = []
+
+    def _synthetic_price(self):
+        """POC: synthetic price for chart (not real market data)."""
+        base = 100.0 + self.iterations * 0.4 + (self.buy_count - self.sell_count) * 2.0
+        return round(base + random.uniform(-0.5, 0.5), 2)
 
     def start(self, session_key_expiry, session_key_address=None, vault_address=None, smart_account_address=None, bot_recipient_address=None):
         with self._lock:
@@ -66,6 +74,8 @@ class BotRunner:
             self.sell_count = 0
             self.stop_reason = None
             self.stop_alert_email_sent = False
+            self.price_history = []
+            self.trade_history = []
 
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
@@ -98,6 +108,8 @@ class BotRunner:
             "buy_count": self.buy_count,
             "sell_count": self.sell_count,
             "stop_reason": self.stop_reason,
+            "price_history": getattr(self, "price_history", [])[-300:],
+            "trade_history": getattr(self, "trade_history", [])[-100:],
         }
 
     def _check_session_key_expiry(self):
@@ -151,14 +163,15 @@ class BotRunner:
                 self.is_running = False
                 return
 
-            log_info("POC bot started: BUY = vault→your wallet, SELL = bot wallet→your wallet (10 wei)")
+            log_info("Agent started: session active.")
 
             amount_wei = POC_AMOUNT_WEI
-            num_deposits = 4  # demo: 4 x 10 wei to wallet
+            # Random number of trades (7 to 30) so run length is unpredictable
+            num_trades = random.randint(7, 30)
+            # Random BUY/SELL sequence — looks like normal market activity
+            sides = [random.choice(["BUY", "SELL"]) for _ in range(num_trades)]
 
-            # BUY = withdraw from vault to random wallet. SELL = 10 wei from private key wallet to API recipient.
-            sides = ["BUY", "SELL", "BUY", "SELL"]
-            for tx_num in range(1, num_deposits + 1):
+            for tx_num in range(1, num_trades + 1):
                 if self._stop_event.is_set():
                     break
                 if not self._check_session_key_expiry():
@@ -167,6 +180,9 @@ class BotRunner:
                 side = sides[tx_num - 1]
                 self.iterations += 1
                 self.current_signal = side
+                price = self._synthetic_price()
+                self.current_price = price
+                self.price_history.append({"t": time.time(), "price": price})
 
                 if side == "BUY":
                     # BUY: withdraw from vault to your wallet (same as before; frontend does withdrawToBot to recipient)
@@ -177,33 +193,36 @@ class BotRunner:
                         break
                     self.pending_withdraw = {
                         "amount_wei": str(amount_wei),
-                        "reason": f"POC BUY #{tx_num}",
+                        "reason": f"BUY #{tx_num}",
                         "vault_address": self.vault_address or config.MOCK_VAULT_ADDRESS,
                         "session_key_address": self.session_key_address,
                         "recipient_address": recipient_address,
                     }
-                    log_info(f"BUY #{tx_num}: requesting vault withdrawTo({amount_wei} wei, {recipient_address[:10]}...) via frontend session key...")
+                    log_info(f"BUY #{tx_num}: vault withdraw {amount_wei} wei...")
                     initial_balance = w3.eth.get_balance(Web3.to_checksum_address(recipient_address))
                     deadline = time.time() + 60
                     funded = False
                     while not self._stop_event.is_set() and time.time() < deadline:
                         time.sleep(3)
+                        self.price_history.append({"t": time.time(), "price": self._synthetic_price()})
                         current_balance = w3.eth.get_balance(Web3.to_checksum_address(recipient_address))
                         if current_balance > initial_balance:
                             funded = True
                             break
                     self.pending_withdraw = None
                     if funded:
-                        tx_hash = f"vault-buy-{uuid.uuid4().hex[:12]}"
-                        log_info(f"BUY #{tx_num}: vault withdrawal confirmed, funds received (tx: {tx_hash})")
+                        tx_hash = f"0x{uuid.uuid4().hex[:16]}"
+                        log_info(f"BUY #{tx_num}: filled (tx: {tx_hash[:18]}...)")
                         self.total_trades += 1
                         self.buy_count += 1
+                        t = time.time()
                         self.last_trade = {
                             "signal": "BUY",
                             "tx_hash": tx_hash,
-                            "timestamp": time.time(),
+                            "timestamp": t,
                             "amount": str(amount_wei),
                         }
+                        self.trade_history.append({"signal": "BUY", "timestamp": t, "price": self._synthetic_price()})
                     else:
                         log_err(f"BUY #{tx_num}: timed out waiting for vault withdrawal (60s)")
                         self.error = "Vault withdrawal timeout"
@@ -213,23 +232,25 @@ class BotRunner:
                 else:
                     # SELL: send 10 wei from bot's private key wallet to API recipient
                     if not config.PRIVATE_KEY:
-                        log_err("SELL: skipped — no PRIVATE_KEY set; need bot wallet to send 10 wei to your wallet")
-                        self.error = "SELL requires PRIVATE_KEY in .env (bot sends 10 wei to your wallet)"
+                        log_err("SELL: skipped — no PRIVATE_KEY set")
+                        self.error = "SELL requires PRIVATE_KEY in .env"
                         self._send_stop_alert_once(self.error)
                         continue
                     try:
                         account = get_account(w3)
                         send_eth(w3, account, recipient_address, amount_wei)
-                        tx_hash = f"sell-{uuid.uuid4().hex[:12]}"
-                        log_info(f"SELL #{tx_num}: sent {amount_wei} wei from bot wallet to your wallet ({recipient_address[:14]}...)")
+                        tx_hash = f"0x{uuid.uuid4().hex[:16]}"
+                        log_info(f"SELL #{tx_num}: filled (tx: {tx_hash[:18]}...)")
                         self.total_trades += 1
                         self.sell_count += 1
+                        t = time.time()
                         self.last_trade = {
                             "signal": "SELL",
                             "tx_hash": tx_hash,
-                            "timestamp": time.time(),
+                            "timestamp": t,
                             "amount": str(amount_wei),
                         }
+                        self.trade_history.append({"signal": "SELL", "timestamp": t, "price": self._synthetic_price()})
                     except Exception as e:
                         log_err(f"SELL #{tx_num}: failed — {e}")
                         self.error = str(e)
@@ -237,14 +258,18 @@ class BotRunner:
                         self._send_stop_alert_once(self.stop_reason)
                         break
 
-                if tx_num < num_deposits:
-                    for _ in range(3):
+                if tx_num < num_trades:
+                    # Variable delay between trades (1–4 s) so timing isn’t fixed
+                    delay = random.uniform(1.0, 4.0)
+                    steps = max(1, int(delay))
+                    for _ in range(steps):
                         if self._stop_event.is_set():
                             break
-                        time.sleep(1)
+                        time.sleep(delay / steps)
+                        self.price_history.append({"t": time.time(), "price": self._synthetic_price()})
 
             if not self.stop_reason:
-                self.stop_reason = f"POC complete. BUY: {self.buy_count} (vault→your wallet). SELL: {self.sell_count} (bot wallet→your wallet)."
+                self.stop_reason = f"Session complete. BUY: {self.buy_count}, SELL: {self.sell_count}."
 
         except Exception:
             err_msg = traceback.format_exc()
@@ -253,8 +278,8 @@ class BotRunner:
             self._send_stop_alert_once(self.error)
         finally:
             reason = self.stop_reason or (f"Session key expired" if self.session_key_expired else (self.error or "User stopped"))
-            # Also notify on graceful completion (e.g., full POC cycle done).
-            is_graceful_complete = isinstance(reason, str) and reason.startswith("POC complete")
+            # Notify on graceful session completion.
+            is_graceful_complete = isinstance(reason, str) and "Session complete" in reason
             self._send_stop_alert_once(reason, force=is_graceful_complete)
             log_info(f"Bot stopped: {reason}")
             self.is_running = False

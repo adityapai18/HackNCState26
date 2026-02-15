@@ -3,6 +3,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatWeiExact, cn } from "@/lib/utils";
 import {
   Loader2,
@@ -17,10 +26,49 @@ import {
   XCircle,
   Wallet,
   Vault,
+  Plus,
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useBalance } from "wagmi";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ReferenceDot,
+  Tooltip,
+} from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { BotInfo, BotStatus, BotLogEntry, StartBotParams, FundingStatus } from "@/hooks/useBotControl";
+
+const CANDLE_BUCKET_SEC = 15;
+
+function buildCandles(priceHistory: { t: number; price: number }[]): { t: number; timeLabel: string; open: number; high: number; low: number; close: number }[] {
+  if (!priceHistory?.length) return [];
+  const buckets = new Map<number, { t: number; prices: number[] }>();
+  for (const p of priceHistory) {
+    const key = Math.floor(p.t / CANDLE_BUCKET_SEC) * CANDLE_BUCKET_SEC;
+    if (!buckets.has(key)) buckets.set(key, { t: key, prices: [] });
+    buckets.get(key)!.prices.push(p.price);
+  }
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, v]) => ({
+      t: v.t,
+      timeLabel: new Date(v.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      open: v.prices[0]!,
+      high: Math.max(...v.prices),
+      low: Math.min(...v.prices),
+      close: v.prices[v.prices.length - 1]!,
+    }));
+}
+
+const chartConfig = {
+  close: { label: "Price", color: "hsl(var(--chart-1))" },
+  high: { label: "High", color: "hsl(var(--muted-foreground))" },
+};
 
 interface BotControlCardProps {
   botInfo: BotInfo | null;
@@ -36,6 +84,9 @@ interface BotControlCardProps {
   eoaAddress: string | null;
   vaultAddress: string;
   vaultBalanceWei: bigint | null;
+  hasSmartAccount?: boolean;
+  depositVaultStatus?: string;
+  onDepositToVault?: (amountEth?: string) => void;
   onStart: (params: StartBotParams) => Promise<boolean>;
   onStop: () => Promise<boolean>;
   withdrawToBot: (amountWei: bigint, recipientAddress: string) => Promise<boolean>;
@@ -92,6 +143,9 @@ export function BotControlCard({
   eoaAddress,
   vaultAddress,
   vaultBalanceWei,
+  hasSmartAccount = false,
+  depositVaultStatus = "",
+  onDepositToVault,
   onStart,
   onStop,
   withdrawToBot,
@@ -100,7 +154,35 @@ export function BotControlCard({
   pendingWithdraw,
 }: BotControlCardProps) {
   const [animatingBalance, setAnimatingBalance] = useState<"wallet" | "vault" | null>(null);
+  const [vaultModalOpen, setVaultModalOpen] = useState(false);
+  const [depositAmountEth, setDepositAmountEth] = useState("0.0001");
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  const priceHistory = botStatus?.price_history ?? [];
+  const tradeHistory = botStatus?.trade_history ?? [];
+  const candlesFromHistory = useMemo(() => buildCandles(priceHistory), [priceHistory]);
+  // When bot is running but no history yet, seed one candle from current_price so chart shows immediately
+  const candles = useMemo(() => {
+    if (candlesFromHistory.length > 0) return candlesFromHistory;
+    const isRunning = botStatus?.is_running ?? false;
+    const price = botStatus?.current_price;
+    const startedAt = botStatus?.started_at;
+    if (!isRunning || price == null || startedAt == null) return [];
+    const t = Math.floor(startedAt / CANDLE_BUCKET_SEC) * CANDLE_BUCKET_SEC;
+    return [
+      {
+        t,
+        timeLabel: new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+      },
+    ];
+  }, [candlesFromHistory, botStatus?.is_running, botStatus?.current_price, botStatus?.started_at]);
+  const hasChartData = candles.length > 0;
+  const chartMinPrice = hasChartData ? Math.min(...candles.flatMap((c) => [c.low, c.open, c.close])) - 1 : 0;
+  const chartMaxPrice = hasChartData ? Math.max(...candles.flatMap((c) => [c.high, c.open, c.close])) + 1 : 100;
   const pendingWithdrawHandledRef = useRef<string | null>(null);
   const prevVaultWeiRef = useRef<bigint | null>(null);
   const prevWalletWeiRef = useRef<bigint | undefined>(undefined);
@@ -185,7 +267,7 @@ export function BotControlCard({
   const canStart = botInfo && hasSessionKey && vaultAddress && sessionKeyAddress && eoaAddress;
 
   return (
-    <Card className="md:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-chart-2" />
@@ -239,25 +321,39 @@ export function BotControlCard({
               </div>
             </div>
 
-            {/* Vault balance */}
+            {/* Vault balance — Add balance button opens deposit modal */}
             <div className="rounded-xl border border-border/50 bg-card p-4 space-y-3 transition-colors duration-300">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors duration-300 ${
-                    vaultBalanceWei !== null && vaultBalanceWei > 0n ? "bg-chart-1/15" : "bg-muted/60"
-                  }`}
-                >
-                  <Vault
-                    className={`h-5 w-5 transition-colors duration-300 ${
-                      vaultBalanceWei !== null && vaultBalanceWei > 0n ? "text-chart-1" : "text-muted-foreground"
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors duration-300 ${
+                      vaultBalanceWei !== null && vaultBalanceWei > 0n ? "bg-chart-1/15" : "bg-muted/60"
                     }`}
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold tracking-tight">Vault balance</h3>
-                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
-                    ETH available for the agent to trade.
-                  </p>
+                  >
+                    <Vault
+                      className={`h-5 w-5 transition-colors duration-300 ${
+                        vaultBalanceWei !== null && vaultBalanceWei > 0n ? "text-chart-1" : "text-muted-foreground"
+                      }`}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-semibold tracking-tight">Vault balance</h3>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVaultModalOpen(true)}
+                        className="shrink-0 gap-1.5 h-8"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add balance
+                      </Button>
+                    </div>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
+                      ETH available for the agent to trade.
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="h-px bg-border/50" />
@@ -277,6 +373,73 @@ export function BotControlCard({
             </div>
           </div>
         ) : null}
+
+        {/* Vault deposit modal */}
+        <Dialog open={vaultModalOpen} onOpenChange={setVaultModalOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Vault className="h-5 w-5 text-chart-1" />
+                Vault balance
+              </DialogTitle>
+              <DialogDescription>
+                Deposit ETH from your wallet into the vault so the agent can trade.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Current balance
+                </p>
+                <p className="mt-1 font-mono text-xl font-bold tracking-tight">
+                  {formatWeiExact(vaultBalanceWei)} ETH
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="deposit-amount" className="text-sm font-medium">
+                  Amount to deposit (ETH)
+                </label>
+                <Input
+                  id="deposit-amount"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  placeholder="0.0001"
+                  value={depositAmountEth}
+                  onChange={(e) => setDepositAmountEth(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              {depositVaultStatus && (
+                <p className="text-xs text-muted-foreground">{depositVaultStatus}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setVaultModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  onDepositToVault?.(depositAmountEth || undefined);
+                  onRefreshBalance();
+                }}
+                disabled={loading !== null || !hasSmartAccount || !onDepositToVault}
+              >
+                {loading === "deposit" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Depositing…
+                  </>
+                ) : (
+                  "Deposit"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {!botInfo && (
           <p className="text-xs text-muted-foreground text-center py-2">
@@ -406,6 +569,107 @@ export function BotControlCard({
             )}
           </div>
         )}
+
+        {/* Candle chart — always visible so user can find it; shows when running + has data */}
+        <div className="rounded-lg border border-border/50 bg-card/50 p-3">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Price & trades</p>
+          {!isRunning ? (
+            <div className="flex h-[220px] w-full items-center justify-center rounded-md bg-muted/20 text-sm text-muted-foreground">
+              Start the agent to see the live candle chart and buy/sell points.
+            </div>
+          ) : hasChartData ? (
+            <>
+              <div className="h-[220px] w-full" style={{ minHeight: 220 }}>
+                <ChartContainer config={chartConfig} className="h-full w-full !aspect-auto">
+                  <ComposedChart data={candles} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis
+                      dataKey="t"
+                      type="number"
+                      domain={
+                        candles.length === 1
+                          ? [candles[0]!.t - CANDLE_BUCKET_SEC, candles[0]!.t + CANDLE_BUCKET_SEC]
+                          : ["dataMin", "dataMax"]
+                      }
+                      tickFormatter={(t) => new Date(t * 1000).toLocaleTimeString([], { minute: "2-digit", second: "2-digit" })}
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                    />
+                    <YAxis
+                      domain={[chartMinPrice, chartMaxPrice]}
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                      tickFormatter={(v) => `$${v.toFixed(1)}`}
+                    />
+                    <Tooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value) => [`$${Number(value).toFixed(2)}`, "Price"]}
+                          labelFormatter={(_, payload) => payload?.[0]?.payload?.timeLabel ?? ""}
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey="close"
+                      baseValue={(entry: { open: number }) => entry.open}
+                      fill="transparent"
+                      barSize={8}
+                      radius={0}
+                      isAnimationActive={false}
+                      fillOpacity={1}
+                      shape={(props: { x: number; y: number; width: number; height: number; payload: { open: number; close: number } }) => {
+                        const { x, y, width, height, payload } = props;
+                        const isUp = payload.close >= payload.open;
+                        return (
+                          <g>
+                            <rect
+                              x={x}
+                              y={y}
+                              width={Math.max(width, 4)}
+                              height={Math.abs(height)}
+                              fill={isUp ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)"}
+                              stroke={isUp ? "rgb(22, 163, 74)" : "rgb(220, 38, 38)"}
+                              strokeWidth={1}
+                            />
+                          </g>
+                        );
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="close"
+                      stroke="hsl(var(--chart-1))"
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    {tradeHistory.map((trade, i) => (
+                      <ReferenceDot
+                        key={`${trade.timestamp}-${trade.signal}-${i}`}
+                        x={trade.timestamp}
+                        y={trade.price}
+                        r={5}
+                        fill={trade.signal === "BUY" ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)"}
+                        stroke="white"
+                        strokeWidth={2}
+                      />
+                    ))}
+                  </ComposedChart>
+                </ChartContainer>
+              </div>
+              <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> BUY
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> SELL
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex h-[220px] w-full items-center justify-center rounded-md bg-muted/30 text-sm text-muted-foreground">
+              Collecting price data…
+            </div>
+          )}
+        </div>
 
         {/* Stopped status with results */}
         {botStatus && !isRunning && (botStatus.total_trades > 0 || botStatus.stop_reason) && (
