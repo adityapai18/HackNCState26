@@ -48,7 +48,7 @@ export function VaultBalanceCard({
   const hasBalance = vaultBalanceWei !== null && vaultBalanceWei > 0n;
 
   return (
-    <Card className="overflow-hidden transition-all duration-300">
+    <Card className="transition-all duration-300">
       <CardContent className="p-5">
         {/* Top row: icon + title + refresh */}
         <div className="flex items-start justify-between gap-3">

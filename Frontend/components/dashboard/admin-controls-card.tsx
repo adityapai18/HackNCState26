@@ -37,7 +37,7 @@ export function AdminControlsCard({
   const canSetLimits = hasSmartAccount && isOwnerWallet;
 
   return (
-    <Card className="overflow-hidden border-border/50 transition-all duration-300">
+    <Card className="border-border/50 transition-all duration-300">
       <CardContent className="p-5">
         {/* Top row: icon + title */}
         <div className="flex items-start gap-3">

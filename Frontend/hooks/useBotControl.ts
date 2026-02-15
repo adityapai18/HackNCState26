@@ -27,6 +27,17 @@ export interface PendingWithdraw {
   recipient_address?: string;
 }
 
+export interface PricePoint {
+  t: number;
+  price: number;
+}
+
+export interface TradePoint {
+  signal: string;
+  timestamp: number;
+  price: number;
+}
+
 export interface BotStatus {
   is_running: boolean;
   current_signal: string | null;
@@ -47,6 +58,10 @@ export interface BotStatus {
   buy_count: number;
   sell_count: number;
   stop_reason: string | null;
+  /** Live price points for chart (when bot is running) */
+  price_history?: PricePoint[];
+  /** Trades with timestamp and price for chart markers */
+  trade_history?: TradePoint[];
 }
 
 export interface BotLogEntry {

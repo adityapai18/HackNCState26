@@ -29,7 +29,7 @@ export function SessionKeyPanel({
 
   return (
     <Card
-      className={`overflow-hidden transition-all duration-300 ${
+      className={`transition-all duration-300 ${
         sessionKeyAddress ? "ring-1 ring-chart-3/20" : ""
       }`}
     >

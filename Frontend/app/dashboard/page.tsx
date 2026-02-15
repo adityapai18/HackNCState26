@@ -3,12 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionKeys } from "@/hooks/useSessionKeys";
 import { useBotControl } from "@/hooks/useBotControl";
-import { useVaultHistory } from "@/hooks/useVaultHistory";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { AccountDialog } from "@/components/dashboard/account-dialog";
 import { SessionKeyPanel } from "@/components/dashboard/session-key-panel";
-import { VaultBalanceCard } from "@/components/dashboard/vault-balance-card";
-import { SessionActivityCard } from "@/components/dashboard/session-activity-card";
 import { AdminControlsCard } from "@/components/dashboard/admin-controls-card";
 import { BotControlCard } from "@/components/dashboard/bot-control-card";
 
@@ -17,10 +14,6 @@ export default function DashboardPage() {
   const bot = useBotControl();
   const pingOnLoadDone = useRef(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(true);
-  const { balanceSnapshots, withdrawBars, pingDots } = useVaultHistory(
-    sk.vaultEvents,
-    sk.vaultBalanceWei
-  );
 
   useEffect(() => {
     if (pingOnLoadDone.current || sk.loading !== null) return;
@@ -40,7 +33,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex h-screen w-full flex-col bg-background">
       <DashboardHeader
         eoaAddress={sk.eoaAddress}
         disconnect={sk.disconnect}
@@ -60,9 +53,9 @@ export default function DashboardPage() {
         {...walletProps}
       />
 
-      <main className="mx-auto max-w-6xl px-5 py-6 md:px-8 md:py-8">
-        {/* Row 1: Session Key + Vault Balance */}
-        <div className="grid gap-5 md:grid-cols-2">
+      <main className="flex min-h-0 flex-1 w-full flex-col gap-5 overflow-y-auto overflow-x-visible px-5 py-6 md:flex-row md:px-8 md:py-8">
+        {/* Left 1/3: Session key, Limits */}
+        <aside className="flex w-full shrink-0 flex-col gap-5 md:w-1/3 md:min-w-[320px] md:max-w-[400px]">
           <SessionKeyPanel
             sessionKeyAddress={sk.sessionKeyAddress}
             smartAccountAddress={sk.smartAccountAddress ?? null}
@@ -72,43 +65,7 @@ export default function DashboardPage() {
             isOwnerWallet={sk.isOwnerWallet}
             onIssueSessionKey={sk.handleIssueSessionKey}
           />
-          <VaultBalanceCard
-            vaultBalanceWei={sk.vaultBalanceWei}
-            depositVaultStatus={sk.depositVaultStatus}
-            loading={sk.loading}
-            hasSmartAccount={!!sk.smartAccountAddress}
-            onDeposit={sk.handleDepositToVault}
-            onRefresh={sk.refreshBalance}
-            balanceSnapshots={balanceSnapshots}
-          />
-        </div>
-
-        {/* Row 2: Withdraw + Session Activity */}
-        <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <BotControlCard
-            botInfo={bot.botInfo}
-            botStatus={bot.botStatus}
-            logs={bot.logs}
-            loading={bot.loading}
-            error={bot.error}
-            fundingStatus={bot.fundingStatus}
-            hasSessionKey={!!sk.sessionKeyAddress}
-            sessionKeyExpiry={sk.sessionKeyExpiry}
-            sessionKeyAddress={sk.sessionKeyAddress}
-            smartAccountAddress={sk.smartAccountAddress}
-            eoaAddress={sk.eoaAddress ?? null}
-            vaultAddress={sk.mockVaultAddress || ""}
-            vaultBalanceWei={sk.vaultBalanceWei}
-            onStart={bot.startBot}
-            onStop={bot.stopBot}
-            withdrawToBot={sk.withdrawToBot}
-            withdrawToBotError={sk.withdrawToBotError}
-            onRefreshBalance={sk.refreshBalance}
-            pendingWithdraw={bot.pendingWithdraw}
-          />
-        </div>
-        {sk.smartAccountAddress != null && (
-          <div className="mt-5">
+          {sk.smartAccountAddress != null && (
             <AdminControlsCard
               vaultOwner={sk.vaultOwner}
               hasSmartAccount={!!sk.smartAccountAddress}
@@ -123,8 +80,36 @@ export default function DashboardPage() {
               loading={sk.loading}
               onSetLimits={sk.handleSetTokenLimits}
             />
-          </div>
-        )}
+          )}
+        </aside>
+
+        {/* Center 2/3: Trade agent control — no internal scroll */}
+        <section className="min-w-0 flex-1 pb-6">
+            <BotControlCard
+              botInfo={bot.botInfo}
+              botStatus={bot.botStatus}
+              logs={bot.logs}
+              loading={bot.loading}
+              error={bot.error}
+              fundingStatus={bot.fundingStatus}
+              hasSessionKey={!!sk.sessionKeyAddress}
+              sessionKeyExpiry={sk.sessionKeyExpiry}
+              sessionKeyAddress={sk.sessionKeyAddress}
+              smartAccountAddress={sk.smartAccountAddress}
+              eoaAddress={sk.eoaAddress ?? null}
+              vaultAddress={sk.mockVaultAddress || ""}
+              vaultBalanceWei={sk.vaultBalanceWei}
+              hasSmartAccount={!!sk.smartAccountAddress}
+              depositVaultStatus={sk.depositVaultStatus}
+              onDepositToVault={sk.handleDepositToVault}
+              onRefreshBalance={sk.refreshBalance}
+              onStart={bot.startBot}
+              onStop={bot.stopBot}
+              withdrawToBot={sk.withdrawToBot}
+              withdrawToBotError={sk.withdrawToBotError}
+              pendingWithdraw={bot.pendingWithdraw}
+            />
+        </section>
       </main>
     </div>
   );
