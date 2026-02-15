@@ -44,17 +44,17 @@ The frontend dashboard talks to this API when you use the “Trade agent” cont
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         CryptoKnight (Next.js)                          │
-│  Login → Onboarding (create SA, fund gas, deposit/skip) → Dashboard      │
-│  Dashboard: Session keys, vault balance, admin limits, bot control       │
+│  Login → Onboarding (create SA, fund gas, deposit/skip) → Dashboard     │
+│  Dashboard: Session keys, vault balance, admin limits, bot control      │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
         │                       │                       │
         ▼                       ▼                       ▼
 ┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ Alchemy       │     │ MockVault       │     │ Bot API          │
-│ (Account Kit, │     │ (Sepolia)       │     │ (Flask :5001)    │
-│  RPC, Bundler)│     │ deposit/ping/   │     │ start/stop/logs  │
+│ Alchemy       │     │ MockVault       │     │ Bot API         │
+│ (Account Kit, │     │ (Sepolia)       │     │ (Flask :5001)   │
+│  RPC, Bundler)│     │ deposit/ping/   │     │ start/stop/logs │
 └───────────────┘     │ withdraw/limits │     └────────┬────────┘
                       └─────────────────┘              │
                                                        ▼
@@ -65,31 +65,6 @@ The frontend dashboard talks to this API when you use the “Trade agent” cont
                                               │ → IPFS + Logger │
                                               └─────────────────┘
 ```
-
----
-
-## Screenshots
-
-You can add screenshots under `images/` and reference them here.
-
-| Screen | Description |
-|--------|-------------|
-| [Login](./images/login.png) | Connect wallet (MetaMask) on Sepolia. |
-| [Onboarding](./images/onboarding.png) | Create smart account, add gas, deposit to vault or skip. |
-| [Dashboard](./images/dashboard.png) | Session key panel, vault balance, admin limits, bot control. |
-
-*(Add `login.png`, `onboarding.png`, and `dashboard.png` in the `images/` folder to show them above.)*
-
-![Login — Connect wallet](images/login.png)  
-*Login: connect your wallet on Sepolia.*
-
-![Onboarding — Smart account & vault](images/onboarding.png)  
-*Onboarding: create smart account, fund gas, deposit or skip.*
-
-![Dashboard — Session keys & bot](images/dashboard.png)  
-*Dashboard: session keys, vault, admin limits, and trading bot control.*
-
----
 
 ## Quick Start
 
