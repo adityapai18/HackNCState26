@@ -27,6 +27,8 @@ import {
   Wallet,
   Vault,
   Plus,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useBalance } from "wagmi";
@@ -93,6 +95,59 @@ interface BotControlCardProps {
   withdrawToBotError: string | null;
   pendingWithdraw: { amount_wei: string; reason: string; recipient_address?: string } | null;
   onRefreshBalance: () => void;
+}
+
+function LogsDropdown({
+  logs,
+  logEndRef,
+}: {
+  logs: BotLogEntry[];
+  logEndRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium hover:bg-muted/50 transition-colors"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <Terminal className="h-4 w-4 shrink-0" />
+        <span>Agent Logs</span>
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">{logs.length}</span>
+      </button>
+      {open && (
+        <div
+          className="h-40 overflow-y-auto border-t bg-zinc-950 p-3 font-mono text-xs text-zinc-300 space-y-1"
+          style={{ scrollBehavior: "smooth" }}
+        >
+          {logs.map((entry, i) => (
+            <div
+              key={`${entry.ts}-${i}`}
+              className={
+                entry.level === "error"
+                  ? "text-red-400"
+                  : entry.level === "warning"
+                    ? "text-amber-400"
+                    : "text-zinc-400"
+              }
+            >
+              <span className="text-zinc-500 select-none">
+                {new Date(entry.ts * 1000).toLocaleTimeString()}{" "}
+              </span>
+              {entry.msg}
+            </div>
+          ))}
+          <div ref={logEndRef} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SignalBadge({ signal }: { signal: string | null }) {
@@ -671,24 +726,6 @@ export function BotControlCard({
           )}
         </div>
 
-        {/* Stopped status with results */}
-        {botStatus && !isRunning && (botStatus.total_trades > 0 || botStatus.stop_reason) && (
-          <div className="rounded-lg border p-4 space-y-2">
-            <p className="text-sm font-medium">Agent Stopped</p>
-            {botStatus.stop_reason && (
-              <p className="text-sm text-muted-foreground">{botStatus.stop_reason}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              BUY: {botStatus.buy_count ?? 0} · SELL: {botStatus.sell_count ?? 0} | Iterations: {botStatus.iterations}
-            </p>
-            {botStatus.last_trade && (
-              <p className="text-xs text-muted-foreground font-mono">
-                Last: {botStatus.last_trade.signal} - {botStatus.last_trade.tx_hash.slice(0, 16)}...
-              </p>
-            )}
-          </div>
-        )}
-
         {/* Session key expiry warning */}
         {botStatus?.session_key_expired && (
           <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/20 p-3">
@@ -699,37 +736,9 @@ export function BotControlCard({
           </div>
         )}
 
-        {/* Real-time logs */}
+        {/* Real-time logs — dropdown, hidden by default */}
         {logs.length > 0 && (
-          <div className="rounded-lg border p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Terminal className="h-4 w-4" />
-              Agent Logs
-            </div>
-            <div
-              className="h-40 overflow-y-auto rounded bg-zinc-950 p-3 font-mono text-xs text-zinc-300 space-y-1"
-              style={{ scrollBehavior: "smooth" }}
-            >
-              {logs.map((entry, i) => (
-                <div
-                  key={`${entry.ts}-${i}`}
-                  className={
-                    entry.level === "error"
-                      ? "text-red-400"
-                      : entry.level === "warning"
-                        ? "text-amber-400"
-                        : "text-zinc-400"
-                  }
-                >
-                  <span className="text-zinc-500 select-none">
-                    {new Date(entry.ts * 1000).toLocaleTimeString()}{" "}
-                  </span>
-                  {entry.msg}
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </div>
+          <LogsDropdown logs={logs} logEndRef={logEndRef} />
         )}
 
         {/* Error display */}
