@@ -18,7 +18,9 @@ def get_web3():
 
 
 def get_account(w3):
-    """Derive account from private key."""
+    """Return the bot account. Only source: config.PRIVATE_KEY from env. Never use frontend or user wallet."""
+    if not config.PRIVATE_KEY:
+        raise ValueError("PRIVATE_KEY not set; use a dedicated bot wallet in .env only")
     account = w3.eth.account.from_key(config.PRIVATE_KEY)
     return account
 
@@ -28,6 +30,23 @@ def load_abi(filename):
     path = os.path.join(ABI_DIR, filename)
     with open(path) as f:
         return json.load(f)
+
+
+def unwrap_weth(w3, account, amount_wei):
+    """Unwrap WETH to native ETH. Sends ETH to account."""
+    weth_address = Web3.to_checksum_address(config.TOKENS["WETH"]["address"])
+    weth_abi = [{"inputs": [{"name": "wad", "type": "uint256"}], "name": "withdraw", "outputs": [], "stateMutability": "nonpayable", "type": "function"}]
+    weth = w3.eth.contract(address=weth_address, abi=weth_abi)
+    nonce = w3.eth.get_transaction_count(account.address)
+    tx = weth.functions.withdraw(amount_wei).build_transaction({
+        "from": account.address,
+        "nonce": nonce,
+        "maxFeePerGas": w3.eth.gas_price * 2,
+        "maxPriorityFeePerGas": w3.to_wei(2, "gwei"),
+    })
+    signed = account.sign_transaction(tx)
+    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    return w3.eth.wait_for_transaction_receipt(tx_hash)
 
 
 def get_token_balance(w3, wallet_address, token_address):
