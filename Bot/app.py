@@ -8,6 +8,7 @@ from web3 import Web3
 import config
 from bot_logger import get_logs
 from bot_runner import BotRunner
+from notifier import send_test_email
 from uniswap import get_account, get_web3
 
 app = Flask(__name__)
@@ -108,6 +109,15 @@ def bot_logs():
     since = request.args.get("since", type=float)
     logs = get_logs(since_ts=since)
     return jsonify({"logs": logs})
+
+
+@app.route("/bot/test-email", methods=["POST"])
+def bot_test_email():
+    """Trigger a test alert email via Resend."""
+    ok = send_test_email()
+    if ok:
+        return jsonify({"status": "ok", "message": "Test email sent"})
+    return jsonify({"status": "error", "message": "Failed to send test email"}), 500
 
 
 if __name__ == "__main__":

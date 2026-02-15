@@ -13,6 +13,9 @@ RPC_URL = os.getenv("RPC_URL")
 COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")
 PINATA_JWT = os.getenv("PINATA_JWT")
 TRADE_LOGGER_ADDRESS = os.getenv("TRADE_LOGGER_ADDRESS")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+BOT_ALERT_EMAIL_TO = os.getenv("BOT_ALERT_EMAIL_TO", "")
+BOT_ALERT_EMAIL_FROM = os.getenv("BOT_ALERT_EMAIL_FROM", "")
 
 # --- Contract Addresses (Sepolia Testnet) ---
 SWAP_ROUTER_ADDRESS = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"  # SwapRouter02
