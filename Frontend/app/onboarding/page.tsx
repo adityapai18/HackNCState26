@@ -14,6 +14,7 @@ import { sepolia } from "viem/chains";
 import { createPublicClient, http } from "viem";
 import { setOnboardingComplete } from "@/lib/onboarding";
 import { ArrowRight } from "lucide-react";
+import Image from "next/image";
 
 const MIN_GAS_WEI = 10_000_000_000_000_000n; // 0.01 ETH
 
@@ -128,6 +129,12 @@ export default function OnboardingPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
       <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10">
+        <header className="flex items-center gap-2.5 pb-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 overflow-hidden">
+            <Image src="/favicon.ico" alt="CryptoKnight" width={24} height={24} className="object-contain" />
+          </div>
+          <h1 className="text-base font-semibold tracking-tight">CryptoKnight</h1>
+        </header>
         <Card className="bg-slate-900/70 text-white">
           <CardHeader>
             <CardTitle className="text-2xl">Onboarding</CardTitle>

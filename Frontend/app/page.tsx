@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import { hasCompletedOnboarding } from "@/lib/onboarding";
 
@@ -26,23 +27,10 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-8 w-8 text-primary"
-            >
-              <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-              <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
-              <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
-            </svg>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center overflow-hidden">
+            <Image src="/favicon.ico" alt="CryptoKnight" width={48} height={48} className="object-contain scale-150" />
           </div>
-          <CardTitle className="text-2xl">Session Keys Dashboard</CardTitle>
+          <CardTitle className="text-2xl">CryptoKnight</CardTitle>
           <CardDescription>
             Connect your wallet to manage smart account session keys, deposits, and withdrawals on Sepolia.
           </CardDescription>

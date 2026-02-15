@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DashboardStatusBar } from "@/components/dashboard/dashboard-status-bar";
 import { truncateAddress } from "@/lib/utils";
-import { LogOut, User, Wallet } from "lucide-react";
+import Image from "next/image";
+import { LogOut, User } from "lucide-react";
 
 interface DashboardHeaderProps {
   eoaAddress: string | undefined;
@@ -42,10 +43,10 @@ export function DashboardHeader({
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-md">
       <div className="flex w-full items-center justify-between gap-4 px-5 py-3 md:px-8">
         <div className="flex shrink-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <Wallet className="h-4 w-4 text-primary" />
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden">
+            <Image src="/favicon.ico" alt="CryptoKnight" width={28} height={28} className="object-contain scale-150" />
           </div>
-          <h1 className="text-base font-semibold tracking-tight">AgentVault</h1>
+          <h1 className="text-base font-semibold tracking-tight">CryptoKnight</h1>
         </div>
 
         <div className="flex min-w-0 flex-1 items-center justify-end gap-3">

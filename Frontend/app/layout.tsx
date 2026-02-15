@@ -6,7 +6,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Session Keys Dashboard",
+  title: "CryptoKnight",
   description: "Smart account session key management dashboard",
 };
 
