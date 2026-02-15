@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { WalletInfoCard } from "@/components/dashboard/wallet-info-card";
 import { VaultBalanceCard } from "@/components/dashboard/vault-balance-card";
 import { useSessionKeys } from "@/hooks/useSessionKeys";
@@ -11,6 +12,8 @@ import { useConfig } from "wagmi";
 import { getWalletClient } from "@wagmi/core";
 import { sepolia } from "viem/chains";
 import { createPublicClient, http } from "viem";
+import { setOnboardingComplete } from "@/lib/onboarding";
+import { ArrowRight } from "lucide-react";
 
 const MIN_GAS_WEI = 10_000_000_000_000_000n; // 0.01 ETH
 
@@ -98,24 +101,29 @@ export default function OnboardingPage() {
     ensureGas();
   }, [sk.smartAccountAddress, deploymentChecked, gasChecked, wagmiConfig]);
 
-  // Existing smart accounts can move to dashboard after gas check/top-up prompt
-  useEffect(() => {
-    if (isDeployed === true && sk.smartAccountAddress && gasChecked) {
-      router.push("/dashboard");
-    }
-  }, [isDeployed, sk.smartAccountAddress, gasChecked, router]);
+  // After gas, always wait: show vault (add amount) or skip. No auto-redirect to dashboard.
 
-  // After a successful vault deposit (for newly created accounts), move to dashboard
+  // When user deposits and it's confirmed, mark complete and go to dashboard
   useEffect(() => {
-    if (isDeployed === false && sk.smartAccountAddress && sk.vaultBalanceWei !== null && sk.vaultBalanceWei > 0n) {
+    if (sk.smartAccountAddress && sk.eoaAddress && sk.vaultBalanceWei !== null && sk.vaultBalanceWei > 0n) {
+      setOnboardingComplete(sk.eoaAddress);
       router.push("/dashboard");
     }
-  }, [isDeployed, sk.smartAccountAddress, sk.vaultBalanceWei, router]);
+  }, [sk.smartAccountAddress, sk.eoaAddress, sk.vaultBalanceWei, router]);
+
+  const handleSkipToDashboard = () => {
+    if (sk.eoaAddress) {
+      setOnboardingComplete(sk.eoaAddress);
+      router.push("/dashboard");
+    }
+  };
 
   const handleCreateAndFund = async () => {
     setFundStatus("");
     await sk.handleConnectAndCreateAccount();
   };
+
+  const canSkip = !!sk.smartAccountAddress && deploymentChecked && gasChecked;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -124,7 +132,7 @@ export default function OnboardingPage() {
           <CardHeader>
             <CardTitle className="text-2xl">Onboarding</CardTitle>
             <CardDescription className="text-slate-300">
-              Create your smart account. We’ll handle initial funding automatically, then take you to the dashboard.
+              Create your smart account. We’ll add a little gas (0.01 ETH) when it’s new. Then you can add money to the vault or skip to the main screen.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
@@ -143,18 +151,31 @@ export default function OnboardingPage() {
               )}
             </div>
 
-            <VaultBalanceCard
-              vaultBalanceWei={sk.vaultBalanceWei}
-              depositVaultStatus={sk.depositVaultStatus}
-              loading={sk.loading}
-              hasSmartAccount={!!sk.smartAccountAddress}
-              onDeposit={sk.handleDepositToVault}
-              onRefresh={sk.refreshBalance}
-              balanceSnapshots={balanceSnapshots}
-              showAmountInput
-              depositAmountEth={depositAmountEth}
-              setDepositAmountEth={setDepositAmountEth}
-            />
+            <div className="space-y-4">
+              <VaultBalanceCard
+                vaultBalanceWei={sk.vaultBalanceWei}
+                depositVaultStatus={sk.depositVaultStatus}
+                loading={sk.loading}
+                hasSmartAccount={!!sk.smartAccountAddress}
+                onDeposit={sk.handleDepositToVault}
+                onRefresh={sk.refreshBalance}
+                balanceSnapshots={balanceSnapshots}
+                showAmountInput
+                depositAmountEth={depositAmountEth}
+                setDepositAmountEth={setDepositAmountEth}
+              />
+              {canSkip && (
+                <Button
+                  variant="outline"
+                  className="w-full border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white"
+                  onClick={handleSkipToDashboard}
+                  disabled={sk.loading !== null}
+                >
+                  Skip to main screen
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
