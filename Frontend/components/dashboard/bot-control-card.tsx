@@ -15,6 +15,7 @@ import {
   Minus,
   AlertTriangle,
   Terminal,
+  XCircle,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import type { BotInfo, BotStatus, BotLogEntry, StartBotParams, FundingStatus } from "@/hooks/useBotControl";
@@ -193,12 +194,27 @@ export function BotControlCard({
         )}
 
         {withdrawToBotError && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3">
-            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">Vault withdraw failed</p>
-              <p className="text-xs text-red-600 dark:text-red-500 break-words">{withdrawToBotError}</p>
-              <p className="text-xs text-muted-foreground mt-1">Smart account limits (e.g. 2 withdrawals) prevent further withdraws.</p>
+          <div
+            className="flex gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 animate-in fade-in-0 slide-in-from-top-1 duration-200"
+            role="alert"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
+              <XCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className="text-sm font-semibold text-red-400">Withdrawal failed</p>
+              <p className="text-[13px] leading-relaxed text-red-400 break-words">
+                {withdrawToBotError}
+              </p>
+              <p className="text-[12px] text-muted-foreground">
+                {withdrawToBotError.includes("Insufficient") || withdrawToBotError.toLowerCase().includes("balance")
+                  ? "Deposit more ETH to the vault, then try again."
+                  : withdrawToBotError.includes("WithdrawalCountLimitReached") || withdrawToBotError.includes("limit")
+                    ? "Session key withdrawal limit reached. Use Limits to increase max withdrawals or re-issue a session key."
+                    : withdrawToBotError.includes("Missing session") || withdrawToBotError.includes("session key")
+                      ? "Issue or re-issue a session key, then start the bot again."
+                      : "Check vault balance and Limits below, then try starting the bot again."}
+              </p>
             </div>
           </div>
         )}

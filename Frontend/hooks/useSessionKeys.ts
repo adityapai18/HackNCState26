@@ -1,26 +1,30 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount, useConnect, useDisconnect, useConfig, useSwitchChain } from "wagmi";
 import { getWalletClient } from "@wagmi/core";
-import { createPublicClient, http, encodeFunctionData, getAbiItem, getFunctionSelector, toHex, type Hex, type PublicClient } from "viem";
+import { createPublicClient, http, encodeFunctionData, getAbiItem, getFunctionSelector, toHex, parseEther, type Hex, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { MOCK_VAULT_ABI, ETH_TOKEN } from "@/lib/mockVaultAbi";
 
 /** ERC-4337: if sender is already deployed, initCode must be empty. */
-async function stripInitCodeIfDeployed<T extends { type: string; data?: { factory?: string; factoryData?: string } }>(
+async function stripInitCodeIfDeployed<T>(
   publicClient: PublicClient,
   sender: `0x${string}`,
   prepared: T
 ): Promise<T> {
-  if (prepared.type !== "user-operation-v070" && prepared.type !== "user-operation-v060") return prepared;
-  if (!prepared.data?.factory && !prepared.data?.factoryData) return prepared;
+  const candidate = prepared as {
+    type?: string;
+    data?: { factory?: string; factoryData?: string };
+  };
+  if (candidate.type !== "user-operation-v070" && candidate.type !== "user-operation-v060") return prepared;
+  if (!candidate.data?.factory && !candidate.data?.factoryData) return prepared;
   const code = await publicClient.getCode({ address: sender });
   if (!code || code === "0x") return prepared;
   return {
-    ...prepared,
+    ...(prepared as Record<string, unknown>),
     data: {
-      ...prepared.data,
+      ...(candidate.data ?? {}),
       factory: "0x0000000000000000000000000000000000000000" as `0x${string}`,
       factoryData: "0x" as `0x${string}`,
     },
@@ -40,7 +44,7 @@ export interface VaultEvent {
 
 export function useSessionKeys() {
   const config = useConfig();
-  const { address: eoaAddress, isConnected } = useAccount();
+  const { address: eoaAddress, isConnected, chainId } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
@@ -72,11 +76,15 @@ export function useSessionKeys() {
   const [withdrawToAddress, setWithdrawToAddress] = useState<string>("");
   const [withdrawAmountWei, setWithdrawAmountWei] = useState<string>("1");
   const [withdrawToBotError, setWithdrawToBotError] = useState<string | null>(null);
+  const [addGasStatus, setAddGasStatus] = useState<string>("");
+  const [smartAccountLoading, setSmartAccountLoading] = useState(false);
 
   // Track events for charts
   const [vaultEvents, setVaultEvents] = useState<VaultEvent[]>([]);
+  const initAccountRef = useRef(false);
 
   const DEPOSIT_AMOUNT_WEI = 100000000000000n; // 0.0001 ETH
+  const MIN_GAS_WEI = 10_000_000_000_000_000n; // 0.01 ETH
 
   const addEvent = useCallback((event: VaultEvent) => {
     setVaultEvents((prev) => [...prev, event]);
@@ -98,6 +106,8 @@ export function useSessionKeys() {
   // Clear smart account and session key state when wallet disconnects
   useEffect(() => {
     if (eoaAddress != null) return;
+    initAccountRef.current = false;
+    setSmartAccountLoading(false);
     setClient(null);
     setSmartAccountAddress(null);
     setOwnerEoaAddress(null);
@@ -105,6 +115,44 @@ export function useSessionKeys() {
     setSessionKeyAddress(null);
     setPermissions(null);
   }, [eoaAddress]);
+
+  // On dashboard load: when connected but no client, fetch smart account info (requestAccount)
+  useEffect(() => {
+    if (!eoaAddress || client != null || initAccountRef.current) return;
+    const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    const sepoliaRpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL;
+    if (!apiKey && !sepoliaRpcUrl?.trim()) return;
+    initAccountRef.current = true;
+    setSmartAccountLoading(true);
+    (async () => {
+      try {
+        const { createSmartWalletClient } = await import("@account-kit/wallet-client");
+        const { alchemy, sepolia } = await import("@account-kit/infra");
+        const { WalletClientSigner } = await import("@aa-sdk/core");
+        // Ensure wallet is on Sepolia so viem/account-kit don't throw chainId mismatch
+        if (chainId !== undefined && chainId !== sepolia.id) {
+          await switchChainAsync({ chainId: sepolia.id });
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        const walletClient = await getWalletClient(config, { chainId: sepolia.id, assertChainId: false });
+        if (!walletClient?.account) return;
+        const rpcUrl = sepoliaRpcUrl?.trim() || (apiKey ? `https://eth-sepolia.g.alchemy.com/v2/${apiKey}` : "");
+        const chainAgnosticUrl = (apiKey ? `https://api.g.alchemy.com/v2/${apiKey}` : null) || sepoliaRpcUrl?.trim() || rpcUrl;
+        if (!rpcUrl) return;
+        const transport = alchemy({ rpcUrl, chainAgnosticUrl });
+        const signer = new WalletClientSigner(walletClient as never, "wallet");
+        const smartWalletClient = createSmartWalletClient({ transport, chain: sepolia, signer });
+        const account = await smartWalletClient.requestAccount();
+        setClient(smartWalletClient);
+        setSmartAccountAddress(account.address);
+        setOwnerEoaAddress(eoaAddress);
+      } catch {
+        initAccountRef.current = false;
+      } finally {
+        setSmartAccountLoading(false);
+      }
+    })();
+  }, [eoaAddress, client, config, chainId, switchChainAsync]);
 
   // Read vault balance, effective limits for this smart account, and per-session-key totals
   useEffect(() => {
@@ -319,6 +367,32 @@ export function useSessionKeys() {
       setLoading(null);
     }
   }, [client, smartAccountAddress, ownerEoaAddress, eoaAddress, log]);
+
+  const handleAddGasToSmartAccount = useCallback(async () => {
+    if (!smartAccountAddress) {
+      setAddGasStatus("No smart account.");
+      return;
+    }
+    setLoading("addGas");
+    setAddGasStatus("Adding gas…");
+    try {
+      await switchChainAsync({ chainId: sepolia.id });
+      const walletClient = await getWalletClient(config, { chainId: sepolia.id, assertChainId: false });
+      if (!walletClient?.account) throw new Error("Wallet unavailable.");
+      await walletClient.sendTransaction({
+        account: walletClient.account,
+        chain: sepolia,
+        to: smartAccountAddress as `0x${string}`,
+        value: MIN_GAS_WEI,
+      });
+      setAddGasStatus("Added 0.01 ETH. Check ping again.");
+    } catch (e) {
+      const msg = (e as { message?: string })?.message ?? String(e);
+      setAddGasStatus("Failed: " + msg);
+    } finally {
+      setLoading(null);
+    }
+  }, [smartAccountAddress, config, switchChainAsync]);
 
   const handleTestPing = useCallback(async () => {
     if (!client || !smartAccountAddress || !sessionKeySigner || !permissions) {
@@ -561,13 +635,23 @@ export function useSessionKeys() {
     }
   }, [client, smartAccountAddress, sessionKeySigner, permissions, withdrawalCount, maxWithdrawalsEth, withdrawToAddress, withdrawAmountWei, withdrawalLimitEth, totalWithdrawnEth, log, addEvent]);
 
-  const handleDepositToVault = useCallback(async () => {
+  const handleDepositToVault = useCallback(async (amountEth?: string) => {
     if (!client || !smartAccountAddress) {
       setDepositVaultStatus("Complete Step 1 first.");
       return;
     }
     if (!MOCK_VAULT_ADDRESS) {
       setDepositVaultStatus("NEXT_PUBLIC_MOCK_VAULT_ADDRESS not set.");
+      return;
+    }
+    let amountWei: bigint = DEPOSIT_AMOUNT_WEI;
+    try {
+      if (amountEth && amountEth.trim().length > 0) {
+        amountWei = parseEther(amountEth.trim());
+        if (amountWei <= 0n) throw new Error("Amount must be positive");
+      }
+    } catch (e) {
+      setDepositVaultStatus("Enter a valid deposit amount in ETH.");
       return;
     }
     setLoading("deposit");
@@ -578,7 +662,7 @@ export function useSessionKeys() {
         functionName: "deposit",
       });
       let preparedCalls = await client.prepareCalls({
-        calls: [{ to: MOCK_VAULT_ADDRESS, data: depositData, value: toHex(DEPOSIT_AMOUNT_WEI) }],
+        calls: [{ to: MOCK_VAULT_ADDRESS, data: depositData, value: toHex(amountWei) }],
         from: smartAccountAddress as `0x${string}`,
       });
       const rpcUrlDeposit = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
@@ -588,8 +672,8 @@ export function useSessionKeys() {
       }
       const signedCalls = await client.signPreparedCalls(preparedCalls);
       const result = await client.sendPreparedCalls(signedCalls);
-      setDepositVaultStatus(`Deposit submitted. Call id: ${result.id ?? "—"}. Waiting for confirmation…`);
-      addEvent({ type: "deposit", timestamp: Date.now(), amountWei: DEPOSIT_AMOUNT_WEI });
+      setDepositVaultStatus(`Deposit submitted (${amountWei} wei). Call id: ${result.id ?? "—"}. Waiting for confirmation…`);
+      addEvent({ type: "deposit", timestamp: Date.now(), amountWei });
       const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
       if (rpcUrl) {
         const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
@@ -602,7 +686,7 @@ export function useSessionKeys() {
             functionName: "balances",
             args: [ETH_TOKEN as `0x${string}`, smartAccountAddress as `0x${string}`],
           });
-          if (balance >= DEPOSIT_AMOUNT_WEI) {
+          if (balance >= amountWei) {
             setVaultBalanceWei(balance);
             setDepositVaultStatus(`Deposit confirmed. You can now withdraw (up to ${maxWithdrawalsEth}x).`);
             break;
@@ -613,8 +697,8 @@ export function useSessionKeys() {
           setDepositVaultStatus("Deposit may still be pending. Wait and refresh.");
         }
       } else {
-        setVaultBalanceWei((p) => (p ?? 0n) + DEPOSIT_AMOUNT_WEI);
-        setDepositVaultStatus(`Deposited 0.0001 ETH. Wait 10-15s for confirmation.`);
+        setVaultBalanceWei((p) => (p ?? 0n) + amountWei);
+        setDepositVaultStatus(`Deposited ${amountWei} wei. Wait 10-15s for confirmation.`);
       }
     } catch (e) {
       const err = e as { message?: string };
@@ -780,6 +864,10 @@ export function useSessionKeys() {
     pingStatus,
     handleTestPing,
 
+    // Add gas (for dashboard status bar)
+    addGasStatus,
+    handleAddGasToSmartAccount,
+
     // Withdraw
     withdrawStatus,
     withdrawalCount,
@@ -810,6 +898,7 @@ export function useSessionKeys() {
 
     // Loading state
     loading,
+    smartAccountLoading,
 
     // Bot integration
     sessionKeyExpiry,

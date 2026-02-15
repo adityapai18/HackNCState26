@@ -1,45 +1,100 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { CopyButton } from "@/components/copy-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { DashboardStatusBar } from "@/components/dashboard/dashboard-status-bar";
 import { truncateAddress } from "@/lib/utils";
-import { LogOut, Wallet } from "lucide-react";
+import { LogOut, User, Wallet } from "lucide-react";
 
 interface DashboardHeaderProps {
   eoaAddress: string | undefined;
   disconnect: () => void;
+  pingStatus?: string;
+  loading?: string | null;
+  addGasStatus?: string;
+  hasSessionKey?: boolean;
+  hasSmartAccount?: boolean;
+  onPing?: () => void;
+  onAddGas?: () => void;
+  accountPanelExpanded?: boolean;
+  onAccountDialogOpen?: (open: boolean) => void;
 }
 
-export function DashboardHeader({ eoaAddress, disconnect }: DashboardHeaderProps) {
+export function DashboardHeader({
+  eoaAddress,
+  disconnect,
+  pingStatus = "",
+  loading = null,
+  addGasStatus = "",
+  hasSessionKey = false,
+  hasSmartAccount = false,
+  onPing = () => {},
+  onAddGas = () => {},
+  onAccountDialogOpen,
+}: DashboardHeaderProps) {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-bold">Session Keys Dashboard</h1>
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3 md:px-8">
+        <div className="flex shrink-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <Wallet className="h-4 w-4 text-primary" />
+          </div>
+          <h1 className="text-base font-semibold tracking-tight">AgentVault</h1>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+          <DashboardStatusBar
+            pingStatus={pingStatus}
+            loading={loading}
+            addGasStatus={addGasStatus}
+            hasSessionKey={hasSessionKey}
+            hasSmartAccount={hasSmartAccount}
+            onPing={onPing}
+            onAddGas={onAddGas}
+          />
           {eoaAddress && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-1">
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {truncateAddress(eoaAddress, 4)}
-                  </Badge>
-                  <CopyButton value={eoaAddress} className="h-6 w-6" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="font-mono text-xs">{eoaAddress}</p>
-              </TooltipContent>
-            </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-chart-3/20 font-semibold text-foreground ring-1 ring-border/60 transition-all duration-200 hover:ring-primary/40 hover:shadow-lg hover:shadow-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  aria-label="Account menu"
+                >
+                  <span className="text-xs uppercase">
+                    {eoaAddress.slice(2, 4)}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="text-xs text-muted-foreground">Connected as</p>
+                  <p className="font-mono text-xs font-medium">{truncateAddress(eoaAddress, 6)}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => onAccountDialogOpen?.(true)}
+                  className="cursor-pointer gap-2"
+                >
+                  <User className="h-4 w-4" />
+                  Account details
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => disconnect()}
+                  className="cursor-pointer gap-2 text-red-500 focus:text-red-500 dark:text-red-400 dark:focus:text-red-400"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Disconnect
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          <Button variant="ghost" size="sm" onClick={() => disconnect()}>
-            <LogOut className="mr-1 h-4 w-4" />
-            Disconnect
-          </Button>
         </div>
       </div>
     </header>

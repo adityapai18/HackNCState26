@@ -1,10 +1,11 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useSessionKeys } from "@/hooks/useSessionKeys";
 import { useBotControl } from "@/hooks/useBotControl";
 import { useVaultHistory } from "@/hooks/useVaultHistory";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
-import { WalletInfoCard } from "@/components/dashboard/wallet-info-card";
+import { AccountDialog } from "@/components/dashboard/account-dialog";
 import { SessionKeyPanel } from "@/components/dashboard/session-key-panel";
 import { VaultBalanceCard } from "@/components/dashboard/vault-balance-card";
 import { SessionActivityCard } from "@/components/dashboard/session-activity-card";
@@ -14,26 +15,54 @@ import { BotControlCard } from "@/components/dashboard/bot-control-card";
 export default function DashboardPage() {
   const sk = useSessionKeys();
   const bot = useBotControl();
-  const { balanceSnapshots, pingDots } = useVaultHistory(
+  const pingOnLoadDone = useRef(false);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(true);
+  const { balanceSnapshots, withdrawBars, pingDots } = useVaultHistory(
     sk.vaultEvents,
     sk.vaultBalanceWei
   );
 
+  useEffect(() => {
+    if (pingOnLoadDone.current || sk.loading !== null) return;
+    if (sk.sessionKeyAddress && sk.smartAccountAddress && sk.client) {
+      pingOnLoadDone.current = true;
+      sk.handleTestPing();
+    }
+  }, [sk.sessionKeyAddress, sk.smartAccountAddress, sk.client, sk.loading, sk.handleTestPing]);
+
+  const walletProps = {
+    eoaAddress: sk.eoaAddress,
+    smartAccountAddress: sk.smartAccountAddress,
+    step1Status: sk.step1Status,
+    loading: sk.loading,
+    loadingSmartAccount: sk.smartAccountLoading,
+    onCreateAccount: sk.handleConnectAndCreateAccount,
+  };
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       <DashboardHeader
         eoaAddress={sk.eoaAddress}
         disconnect={sk.disconnect}
+        pingStatus={sk.pingStatus}
+        loading={sk.loading}
+        addGasStatus={sk.addGasStatus}
+        hasSessionKey={!!sk.sessionKeyAddress}
+        hasSmartAccount={!!sk.smartAccountAddress}
+        onPing={sk.handleTestPing}
+        onAddGas={sk.handleAddGasToSmartAccount}
+        onAccountDialogOpen={setAccountDialogOpen}
       />
-      <main className="mx-auto max-w-7xl p-4 md:p-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <WalletInfoCard
-            eoaAddress={sk.eoaAddress}
-            smartAccountAddress={sk.smartAccountAddress}
-            step1Status={sk.step1Status}
-            loading={sk.loading}
-            onCreateAccount={sk.handleConnectAndCreateAccount}
-          />
+
+      <AccountDialog
+        open={accountDialogOpen}
+        onOpenChange={setAccountDialogOpen}
+        {...walletProps}
+      />
+
+      <main className="mx-auto max-w-6xl px-5 py-6 md:px-8 md:py-8">
+        {/* Row 1: Session Key + Vault Balance */}
+        <div className="grid gap-5 md:grid-cols-2">
           <SessionKeyPanel
             sessionKeyAddress={sk.sessionKeyAddress}
             step2Status={sk.step2Status}
@@ -51,13 +80,10 @@ export default function DashboardPage() {
             onRefresh={sk.refreshBalance}
             balanceSnapshots={balanceSnapshots}
           />
-          <SessionActivityCard
-            pingStatus={sk.pingStatus}
-            loading={sk.loading}
-            hasSessionKey={!!sk.sessionKeyAddress}
-            onPing={sk.handleTestPing}
-            pingDots={pingDots}
-          />
+        </div>
+
+        {/* Row 2: Withdraw + Session Activity */}
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
           <BotControlCard
             botInfo={bot.botInfo}
             botStatus={bot.botStatus}
@@ -78,7 +104,9 @@ export default function DashboardPage() {
             onRefreshBalance={sk.refreshBalance}
             pendingWithdraw={bot.pendingWithdraw}
           />
-          {(sk.smartAccountAddress != null) && (
+        </div>
+        {sk.smartAccountAddress != null && (
+          <div className="mt-5">
             <AdminControlsCard
               vaultOwner={sk.vaultOwner}
               hasSmartAccount={!!sk.smartAccountAddress}
@@ -93,8 +121,8 @@ export default function DashboardPage() {
               loading={sk.loading}
               onSetLimits={sk.handleSetTokenLimits}
             />
-          )}
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );

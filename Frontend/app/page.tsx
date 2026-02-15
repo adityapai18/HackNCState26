@@ -6,17 +6,21 @@ import { useAccount, useConnect } from "wagmi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { hasCompletedOnboarding } from "@/lib/onboarding";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const { connect, connectors, isPending } = useConnect();
 
   useEffect(() => {
-    if (isConnected) {
+    if (!isConnected || !address) return;
+    if (hasCompletedOnboarding(address)) {
       router.push("/dashboard");
+    } else {
+      router.push("/onboarding");
     }
-  }, [isConnected, router]);
+  }, [isConnected, address, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
