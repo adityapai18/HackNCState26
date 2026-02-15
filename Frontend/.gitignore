@@ -7,7 +7,7 @@ node_modules
 .env.development
 .env.test
 .env.production
-.next/*
+.next/
 .next/types
 .next/cache
 .next/trace
