@@ -52,6 +52,7 @@ export function useSessionKeys() {
   const [sessionKeySigner, setSessionKeySigner] = useState<import("@aa-sdk/core").SmartAccountSigner | null>(null);
   const [sessionKeyAddress, setSessionKeyAddress] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<GrantPermissionsResult | null>(null);
+  const [sessionKeyExpiry, setSessionKeyExpiry] = useState<number | null>(null);
 
   const [step1Status, setStep1Status] = useState<string>("");
   const [step2Status, setStep2Status] = useState<string>("");
@@ -70,6 +71,7 @@ export function useSessionKeys() {
   const [setLimitsStatus, setSetLimitsStatus] = useState<string>("");
   const [withdrawToAddress, setWithdrawToAddress] = useState<string>("");
   const [withdrawAmountWei, setWithdrawAmountWei] = useState<string>("1");
+  const [withdrawToBotError, setWithdrawToBotError] = useState<string | null>(null);
 
   // Track events for charts
   const [vaultEvents, setVaultEvents] = useState<VaultEvent[]>([]);
@@ -278,9 +280,10 @@ export function useSessionKeys() {
         allowance: allowanceForTwoOps.toString(),
       });
 
+      const expiryTimestamp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
       const result = await client.grantPermissions({
         account: smartAccountAddress as `0x${string}`,
-        expirySec: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+        expirySec: expiryTimestamp,
         key: {
           publicKey: (await sessionKey.getAddress()) as `0x${string}`,
           type: "secp256k1",
@@ -303,6 +306,7 @@ export function useSessionKeys() {
       });
 
       setPermissions(result);
+      setSessionKeyExpiry(expiryTimestamp);
       const skAddress = (await sessionKey.getAddress()) as string;
       setSessionKeyAddress(skAddress);
       log("Step 2: Session key issued. Result:", result, "sessionKeyAddress:", skAddress);
@@ -683,6 +687,74 @@ export function useSessionKeys() {
     setRefreshBalanceTrigger((t) => t + 1);
   }, []);
 
+  const withdrawToBot = useCallback(async (amountWei: bigint, recipientAddress: string): Promise<boolean> => {
+    setWithdrawToBotError(null);
+    if (!client || !smartAccountAddress || !sessionKeySigner || !permissions) {
+      setWithdrawToBotError("Missing session key or client");
+      return false;
+    }
+    if (!MOCK_VAULT_ADDRESS) {
+      setWithdrawToBotError("NEXT_PUBLIC_MOCK_VAULT_ADDRESS not set");
+      return false;
+    }
+    let sessionKeyId: `0x${string}`;
+    try {
+      sessionKeyId = (await sessionKeySigner.getAddress()) as `0x${string}`;
+    } catch {
+      return false;
+    }
+    try {
+      const rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
+      if (rpcUrl) {
+        const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+        const balance = await publicClient.readContract({
+          address: MOCK_VAULT_ADDRESS,
+          abi: MOCK_VAULT_ABI,
+          functionName: "balances",
+          args: [ETH_TOKEN as `0x${string}`, smartAccountAddress as `0x${string}`],
+        });
+        if (balance < amountWei) {
+          setWithdrawToBotError("Insufficient vault balance");
+          return false;
+        }
+      }
+      const withdrawData = encodeFunctionData({
+        abi: MOCK_VAULT_ABI,
+        functionName: "withdrawTo",
+        args: [amountWei, recipientAddress as `0x${string}`, sessionKeyId],
+      });
+      log("withdrawToBot: withdrawTo(" + amountWei + ", " + recipientAddress + ") via session key");
+
+      let preparedCalls = await client.prepareCalls({
+        calls: [{ to: MOCK_VAULT_ADDRESS, data: withdrawData }],
+        from: smartAccountAddress as `0x${string}`,
+        capabilities: { permissions },
+      });
+      const rpcUrlW = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}` : "");
+      if (rpcUrlW) {
+        const publicClientW = createPublicClient({ chain: sepolia, transport: http(rpcUrlW) });
+        preparedCalls = await stripInitCodeIfDeployed(publicClientW, smartAccountAddress as `0x${string}`, preparedCalls);
+      }
+
+      const { signPreparedCalls } = await import("@account-kit/wallet-client");
+      const signedCalls = await signPreparedCalls(sessionKeySigner, preparedCalls);
+      await client.sendPreparedCalls({
+        ...signedCalls,
+        capabilities: { permissions },
+      });
+
+      setVaultBalanceWei((p) => (p === null ? null : p - amountWei));
+      addEvent({ type: "withdraw", timestamp: Date.now(), amountWei });
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const errStr = msg.includes("WithdrawalCountLimitReached") ? "WithdrawalCountLimitReached: Smart account withdrawal limit (2) exceeded" : msg;
+      setWithdrawToBotError(errStr);
+      console.error("[SessionKeysPoC] withdrawToBot error:", e);
+      return false;
+    }
+  }, [client, smartAccountAddress, sessionKeySigner, permissions, log, addEvent]);
+
   return {
     // Connection
     eoaAddress,
@@ -738,6 +810,13 @@ export function useSessionKeys() {
 
     // Loading state
     loading,
+
+    // Bot integration
+    sessionKeyExpiry,
+    withdrawToBot,
+    withdrawToBotError,
+    /** Mock vault address from env; pass to bot API when starting */
+    mockVaultAddress: MOCK_VAULT_ADDRESS as string,
 
     // Events for charts
     vaultEvents,

@@ -1,18 +1,20 @@
 "use client";
 
 import { useSessionKeys } from "@/hooks/useSessionKeys";
+import { useBotControl } from "@/hooks/useBotControl";
 import { useVaultHistory } from "@/hooks/useVaultHistory";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { WalletInfoCard } from "@/components/dashboard/wallet-info-card";
 import { SessionKeyPanel } from "@/components/dashboard/session-key-panel";
 import { VaultBalanceCard } from "@/components/dashboard/vault-balance-card";
-import { WithdrawalActivityCard } from "@/components/dashboard/withdrawal-activity-card";
 import { SessionActivityCard } from "@/components/dashboard/session-activity-card";
 import { AdminControlsCard } from "@/components/dashboard/admin-controls-card";
+import { BotControlCard } from "@/components/dashboard/bot-control-card";
 
 export default function DashboardPage() {
   const sk = useSessionKeys();
-  const { balanceSnapshots, withdrawBars, pingDots } = useVaultHistory(
+  const bot = useBotControl();
+  const { balanceSnapshots, pingDots } = useVaultHistory(
     sk.vaultEvents,
     sk.vaultBalanceWei
   );
@@ -49,29 +51,32 @@ export default function DashboardPage() {
             onRefresh={sk.refreshBalance}
             balanceSnapshots={balanceSnapshots}
           />
-          <WithdrawalActivityCard
-            withdrawStatus={sk.withdrawStatus}
-            withdrawalCountEth={sk.withdrawalCountEth}
-            maxWithdrawalsEth={sk.maxWithdrawalsEth}
-            withdrawToAddress={sk.withdrawToAddress}
-            setWithdrawToAddress={sk.setWithdrawToAddress}
-            withdrawAmountWei={sk.withdrawAmountWei}
-            setWithdrawAmountWei={sk.setWithdrawAmountWei}
-            withdrawalLimitEth={sk.withdrawalLimitEth}
-            totalWithdrawnEth={sk.totalWithdrawnEth}
-            vaultBalanceWei={sk.vaultBalanceWei}
-            loading={sk.loading}
-            hasSessionKey={!!sk.sessionKeyAddress}
-            onWithdraw={sk.handleTestWithdraw}
-            eoaAddress={sk.eoaAddress}
-            withdrawBars={withdrawBars}
-          />
           <SessionActivityCard
             pingStatus={sk.pingStatus}
             loading={sk.loading}
             hasSessionKey={!!sk.sessionKeyAddress}
             onPing={sk.handleTestPing}
             pingDots={pingDots}
+          />
+          <BotControlCard
+            botInfo={bot.botInfo}
+            botStatus={bot.botStatus}
+            logs={bot.logs}
+            loading={bot.loading}
+            error={bot.error}
+            fundingStatus={bot.fundingStatus}
+            hasSessionKey={!!sk.sessionKeyAddress}
+            sessionKeyExpiry={sk.sessionKeyExpiry}
+            sessionKeyAddress={sk.sessionKeyAddress}
+            smartAccountAddress={sk.smartAccountAddress}
+            vaultAddress={sk.mockVaultAddress || ""}
+            vaultBalanceWei={sk.vaultBalanceWei}
+            onStart={bot.startBot}
+            onStop={bot.stopBot}
+            withdrawToBot={sk.withdrawToBot}
+            withdrawToBotError={sk.withdrawToBotError}
+            onRefreshBalance={sk.refreshBalance}
+            pendingWithdraw={bot.pendingWithdraw}
           />
           {(sk.smartAccountAddress != null) && (
             <AdminControlsCard
