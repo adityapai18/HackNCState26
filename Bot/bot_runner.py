@@ -7,6 +7,7 @@ from web3 import Web3
 
 import config
 from bot_logger import info as log_info, warning as log_warn, error as log_err
+from notifier import send_bot_stop_email
 from uniswap import get_web3, get_account, send_eth
 
 # POC: 10 wei. BUY = vault -> your wallet (same as before). SELL = bot wallet -> your wallet.
@@ -39,6 +40,7 @@ class BotRunner:
         self.stop_reason = None
         self.smart_account_address = None
         self.bot_recipient_address = None
+        self.stop_alert_email_sent = False
 
     def start(self, session_key_expiry, session_key_address=None, vault_address=None, smart_account_address=None, bot_recipient_address=None):
         with self._lock:
@@ -63,6 +65,7 @@ class BotRunner:
             self.buy_count = 0
             self.sell_count = 0
             self.stop_reason = None
+            self.stop_alert_email_sent = False
 
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
@@ -103,9 +106,22 @@ class BotRunner:
         if time.time() > self.session_key_expiry:
             self.session_key_expired = True
             self.error = "Session key expired"
+            self._send_stop_alert_once("Session key expired")
             self._stop_event.set()
             return False
         return True
+
+    def _send_stop_alert_once(self, reason: str, force: bool = False):
+        """Send failure/expiry email once per run."""
+        if self.stop_alert_email_sent:
+            return
+        should_email = force or self.session_key_expired or bool(self.error)
+        if not should_email:
+            return
+        self.stop_alert_email_sent = send_bot_stop_email(
+            reason=reason,
+            session_key_expired=self.session_key_expired,
+        )
 
     def _can_proceed_with_vault_withdraw(self, w3, amount_wei, recipient_address):
         from vault import get_smart_account_vault_balance
@@ -131,6 +147,7 @@ class BotRunner:
             if not recipient_address:
                 log_err("bot_recipient_address required from frontend")
                 self.error = "Pass bot_recipient_address when starting the bot"
+                self._send_stop_alert_once(self.error)
                 self.is_running = False
                 return
 
@@ -156,6 +173,7 @@ class BotRunner:
                     if not self._can_proceed_with_vault_withdraw(w3, amount_wei, recipient_address):
                         log_err(f"BUY #{tx_num}: skipping — {self.error}")
                         self.stop_reason = f"Stopped after {self.total_trades} trades (insufficient vault balance)"
+                        self._send_stop_alert_once(self.stop_reason)
                         break
                     self.pending_withdraw = {
                         "amount_wei": str(amount_wei),
@@ -190,12 +208,14 @@ class BotRunner:
                         log_err(f"BUY #{tx_num}: timed out waiting for vault withdrawal (60s)")
                         self.error = "Vault withdrawal timeout"
                         self.stop_reason = f"Stopped after {self.total_trades} trades (timeout)"
+                        self._send_stop_alert_once(self.stop_reason)
                         break
                 else:
                     # SELL: send 10 wei from bot's private key wallet to API recipient
                     if not config.PRIVATE_KEY:
                         log_err("SELL: skipped — no PRIVATE_KEY set; need bot wallet to send 10 wei to your wallet")
                         self.error = "SELL requires PRIVATE_KEY in .env (bot sends 10 wei to your wallet)"
+                        self._send_stop_alert_once(self.error)
                         continue
                     try:
                         account = get_account(w3)
@@ -214,6 +234,7 @@ class BotRunner:
                         log_err(f"SELL #{tx_num}: failed — {e}")
                         self.error = str(e)
                         self.stop_reason = f"Stopped after {self.total_trades} trades (SELL failed)"
+                        self._send_stop_alert_once(self.stop_reason)
                         break
 
                 if tx_num < num_deposits:
@@ -229,7 +250,11 @@ class BotRunner:
             err_msg = traceback.format_exc()
             log_err(f"Fatal error:\n{err_msg}")
             self.error = err_msg.strip().split("\n")[-1]
+            self._send_stop_alert_once(self.error)
         finally:
             reason = self.stop_reason or (f"Session key expired" if self.session_key_expired else (self.error or "User stopped"))
+            # Also notify on graceful completion (e.g., full POC cycle done).
+            is_graceful_complete = isinstance(reason, str) and reason.startswith("POC complete")
+            self._send_stop_alert_once(reason, force=is_graceful_complete)
             log_info(f"Bot stopped: {reason}")
             self.is_running = False
