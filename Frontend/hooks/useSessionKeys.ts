@@ -44,7 +44,7 @@ export interface VaultEvent {
 
 export function useSessionKeys() {
   const config = useConfig();
-  const { address: eoaAddress, isConnected } = useAccount();
+  const { address: eoaAddress, isConnected, chainId } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
@@ -127,6 +127,11 @@ export function useSessionKeys() {
         const { createSmartWalletClient } = await import("@account-kit/wallet-client");
         const { alchemy, sepolia } = await import("@account-kit/infra");
         const { WalletClientSigner } = await import("@aa-sdk/core");
+        // Ensure wallet is on Sepolia so viem/account-kit don't throw chainId mismatch
+        if (chainId !== undefined && chainId !== sepolia.id) {
+          await switchChainAsync({ chainId: sepolia.id });
+          await new Promise((r) => setTimeout(r, 400));
+        }
         const walletClient = await getWalletClient(config, { chainId: sepolia.id, assertChainId: false });
         if (!walletClient?.account) return;
         const rpcUrl = sepoliaRpcUrl?.trim() || (apiKey ? `https://eth-sepolia.g.alchemy.com/v2/${apiKey}` : "");
@@ -145,7 +150,7 @@ export function useSessionKeys() {
         setSmartAccountLoading(false);
       }
     })();
-  }, [eoaAddress, client, config]);
+  }, [eoaAddress, client, config, chainId, switchChainAsync]);
 
   // Read vault balance, effective limits for this smart account, and per-session-key totals
   useEffect(() => {
