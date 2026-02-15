@@ -4,27 +4,56 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CopyButton } from "@/components/copy-button";
+import { DashboardStatusBar } from "@/components/dashboard/dashboard-status-bar";
 import { truncateAddress } from "@/lib/utils";
 import { LogOut, Wallet } from "lucide-react";
 
 interface DashboardHeaderProps {
   eoaAddress: string | undefined;
   disconnect: () => void;
+  /** Optional: ping status bar (top right) */
+  pingStatus?: string;
+  loading?: string | null;
+  addGasStatus?: string;
+  hasSessionKey?: boolean;
+  hasSmartAccount?: boolean;
+  onPing?: () => void;
+  onAddGas?: () => void;
 }
 
-export function DashboardHeader({ eoaAddress, disconnect }: DashboardHeaderProps) {
+export function DashboardHeader({
+  eoaAddress,
+  disconnect,
+  pingStatus = "",
+  loading = null,
+  addGasStatus = "",
+  hasSessionKey = false,
+  hasSmartAccount = false,
+  onPing = () => {},
+  onAddGas = () => {},
+}: DashboardHeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6">
-        <div className="flex items-center gap-2">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
+        <div className="flex shrink-0 items-center gap-2">
           <Wallet className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-bold">Session Keys Dashboard</h1>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+          <DashboardStatusBar
+            pingStatus={pingStatus}
+            loading={loading}
+            addGasStatus={addGasStatus}
+            hasSessionKey={hasSessionKey}
+            hasSmartAccount={hasSmartAccount}
+            onPing={onPing}
+            onAddGas={onAddGas}
+          />
           {eoaAddress && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   <Badge variant="secondary" className="font-mono text-xs">
                     {truncateAddress(eoaAddress, 4)}
                   </Badge>
@@ -36,7 +65,7 @@ export function DashboardHeader({ eoaAddress, disconnect }: DashboardHeaderProps
               </TooltipContent>
             </Tooltip>
           )}
-          <Button variant="ghost" size="sm" onClick={() => disconnect()}>
+          <Button variant="ghost" size="sm" onClick={() => disconnect()} className="shrink-0">
             <LogOut className="mr-1 h-4 w-4" />
             Disconnect
           </Button>

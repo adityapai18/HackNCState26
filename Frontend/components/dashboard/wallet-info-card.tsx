@@ -12,6 +12,8 @@ interface WalletInfoCardProps {
   smartAccountAddress: string | null;
   step1Status: string;
   loading: string | null;
+  /** True while fetching smart account on dashboard load (eoa connected, client not ready yet) */
+  loadingSmartAccount?: boolean;
   onCreateAccount: () => void;
 }
 
@@ -20,6 +22,7 @@ export function WalletInfoCard({
   smartAccountAddress,
   step1Status,
   loading,
+  loadingSmartAccount = false,
   onCreateAccount,
 }: WalletInfoCardProps) {
   return (
@@ -30,7 +33,11 @@ export function WalletInfoCard({
           Smart Account
         </CardTitle>
         <CardDescription>
-          {smartAccountAddress ? "Smart account is enabled for your EOA" : "Enable your smart account linked to your EOA"}
+          {loadingSmartAccount
+            ? "Loading your smart account…"
+            : smartAccountAddress
+              ? "Smart account is enabled for your EOA"
+              : "Enable your smart account linked to your EOA"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -43,7 +50,12 @@ export function WalletInfoCard({
             </div>
           </div>
         )}
-        {smartAccountAddress ? (
+        {loadingSmartAccount ? (
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/50 px-4 py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading smart account…</span>
+          </div>
+        ) : smartAccountAddress ? (
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">Smart Account</p>
             <div className="flex items-center gap-1">
