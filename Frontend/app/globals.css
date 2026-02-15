@@ -83,3 +83,29 @@
     background: hsl(var(--muted-foreground) / 0.35);
   }
 }
+
+/* Balance change feedback: red flash when value changes (wallet up on SELL, vault down on BUY) */
+@keyframes balance-flash-up {
+  0% { background-color: transparent; box-shadow: none; color: inherit; }
+  12% { background-color: hsl(var(--chart-5) / 0.3); box-shadow: 0 0 0 2px hsl(var(--chart-5) / 0.4); color: hsl(var(--chart-5)); }
+  100% { background-color: transparent; box-shadow: none; color: inherit; }
+}
+@keyframes balance-flash-down {
+  0% { background-color: transparent; box-shadow: none; color: inherit; }
+  12% { background-color: hsl(var(--chart-5) / 0.3); box-shadow: 0 0 0 2px hsl(var(--chart-5) / 0.4); color: hsl(var(--chart-5)); }
+  100% { background-color: transparent; box-shadow: none; color: inherit; }
+}
+
+.balance-flash-up {
+  animation: balance-flash-up 400ms ease-out both;
+}
+.balance-flash-down {
+  animation: balance-flash-down 400ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .balance-flash-up,
+  .balance-flash-down {
+    animation-duration: 0.01ms;
+  }
+}
