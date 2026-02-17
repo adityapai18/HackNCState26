@@ -24,16 +24,6 @@ We built a system where the AI Agent acts as a **Guest**, not an Owner.
 
 ## 🏗️ Architecture
 
-```mermaid
-graph LR
-    User[User EOA "Master Key"] -- 1. Grants Permission --> SessionKey[Session Key "Guest Pass"]
-    SessionKey -- 2. Signs Trade --> Bundler[Alchemy Bundler]
-    Bundler -- 3. Validates Rules --> SmartAccount[Smart Account]
-    SmartAccount -- 4. Executes Trade --> Uniswap[Uniswap V3]
-    SmartAccount -- 5. BLOCKS Withdrawal --> Hacker[Attacker]
-
-```
-
 ### 1. **CryptoKnight (Frontend)**
 
 The command center for your vault.
