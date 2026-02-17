@@ -1,213 +1,169 @@
-# HackNC State 2026 — CryptoKnight & Trading Bot
+# CryptoKnight 🛡️🤖
 
-A full-stack **session-key–powered** app for managing a smart-account vault and an automated **Uniswap V3 trading bot** with on-chain trade proofs. Built for **Sepolia testnet**.
+> **"Delegate the Trade. Keep the Keys."**
+
+A full-stack **Account Abstraction (ERC-4337)** platform that enables **trustless AI trading**. CryptoKnight solves the "Delegation Dilemma" by using **Session Keys** to give an automated bot permission to trade on your behalf, while physically preventing it from withdrawing your funds.
+
+Built for **Sepolia testnet**.
 
 ---
 
-## What This Repo Does
+## 💡 The Problem
+
+In traditional DeFi, if you want an AI agent to trade for you, you have to give it your **Private Key**. This is a massive security risk—if the bot is hacked or goes rogue, your wallet is drained.
+
+## 🛡️ The Solution: CryptoKnight
+
+We built a system where the AI Agent acts as a **Guest**, not an Owner.
+
+1. **Smart Account Vault:** You deploy a Modular Account (via Alchemy) that holds your funds.
+2. **Session Keys:** You issue a temporary, restricted key to the bot.
+3. **On-Chain Policy:** The bot can call `swap()` or `ping()`, but if it attempts to call `withdraw()`, the transaction **reverts on-chain**.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph LR
+    User[User EOA "Master Key"] -- 1. Grants Permission --> SessionKey[Session Key "Guest Pass"]
+    SessionKey -- 2. Signs Trade --> Bundler[Alchemy Bundler]
+    Bundler -- 3. Validates Rules --> SmartAccount[Smart Account]
+    SmartAccount -- 4. Executes Trade --> Uniswap[Uniswap V3]
+    SmartAccount -- 5. BLOCKS Withdrawal --> Hacker[Attacker]
+
+```
 
 ### 1. **CryptoKnight (Frontend)**
 
-**CryptoKnight** is a Next.js app that lets you:
+The command center for your vault.
 
-- **Connect** an EOA (e.g. MetaMask) on Sepolia.
-- **Create** an Alchemy Modular (smart) account and fund it with gas.
-- **Issue a session key** with scoped permissions: the key can call `ping()`, `deposit()`, `withdraw()`, and `withdrawTo()` on a **MockVault** contract, with per–session-key withdrawal limits.
-- **Onboard**: ensure the smart account has gas, optionally deposit ETH into the vault, then continue to the dashboard.
-- **Dashboard**: view session key status, vault balance and history, set admin withdrawal limits (if you’re the vault owner), and control the trading bot (start/stop, view logs, pending withdrawals).
+* **Stack:** Next.js 14, wagmi, viem, Alchemy Account Kit.
+* **Functionality:**
+* **Onboarding:** Deploys a Smart Account and funds it with Sepolia ETH.
+* **Session Management:** Issues session keys with **functions-on-contract** permissions.
+* **Vault Control:** Deposit funds, view balance, and set admin withdrawal limits.
+* **Bot Dashboard:** Start/Stop the Python bot and view live trade logs.
 
-Session keys are created with **Alchemy Account Kit** using **functions-on-contract** permissions and per-session withdrawal limits enforced on-chain by the vault.
+
 
 ### 2. **MockVault (Contracts)**
 
-A Hardhat project under `Frontend/contracts/` that deploys **MockVault.sol** to Sepolia:
+The on-chain security layer.
 
-- **Deposit** ETH (payable) to credit the smart account’s balance.
-- **Ping** to test session key authorization (emits event).
-- **Withdraw** / **WithdrawTo** with per–session-key limits (count and max total) set by the vault owner.
+* **Stack:** Hardhat, Solidity.
+* **Logic:** A vault contract that enforces **Per-Session Limits**.
+* `deposit()`: Anyone can fund the account.
+* `withdraw()`: Only allowed if the signer has permission AND has not exceeded their specific allowance.
 
-### 3. **Trading Bot (Bot)**
 
-A Python service that:
 
-- Fetches price data from **CoinGecko** and runs an **SMA crossover** strategy.
-- Executes **Uniswap V3** swaps on Sepolia.
-- Records **trade proofs** (IPFS + on-chain TradeLogger).
-- Exposes a **Flask API** (default port **5001**) so the CryptoKnight dashboard can start/stop the bot, stream logs, and see pending vault withdrawals.
+### 3. **The Agent (Bot)**
 
-The frontend dashboard talks to this API when you use the “Trade agent” controls.
+The autonomous trader.
+
+* **Stack:** Python, Flask, Web3.py, CoinGecko, Uniswap V3.
+* **Logic:**
+* Monitors market data (SMA Crossover Strategy).
+* Executes swaps on Sepolia Uniswap V3 using the **Session Key**.
+* **Trade Logger:** Posts trade proofs to IPFS and logs them on-chain for transparency.
+
+
 
 ---
 
-## Architecture (High Level)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         CryptoKnight (Next.js)                          │
-│  Login → Onboarding (create SA, fund gas, deposit/skip) → Dashboard     │
-│  Dashboard: Session keys, vault balance, admin limits, bot control      │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ Alchemy       │     │ MockVault       │     │ Bot API         │
-│ (Account Kit, │     │ (Sepolia)       │     │ (Flask :5001)   │
-│  RPC, Bundler)│     │ deposit/ping/   │     │ start/stop/logs │
-└───────────────┘     │ withdraw/limits │     └────────┬────────┘
-                      └─────────────────┘              │
-                                                       ▼
-                                              ┌─────────────────┐
-                                              │ Trading Bot     │
-                                              │ CoinGecko → SMA │
-                                              │ → Uniswap V3    │
-                                              │ → IPFS + Logger │
-                                              └─────────────────┘
-```
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Node.js** 18+ (for Frontend and contracts)
-- **Python** 3.10+ (for Bot)
-- **MetaMask** (or any injected wallet) on **Sepolia**
-- **Alchemy** account ([dashboard](https://dashboard.alchemy.com/)) for Sepolia RPC and Account Kit
-- **Sepolia ETH** for gas (e.g. [Alchemy](https://sepoliafaucet.com/) or [Sepolia faucet](https://www.alchemy.com/faucets/ethereum-sepolia))
-- For the **Bot**: Valkey/Redis, CoinGecko API key, Pinata (see [Bot/README.md](./Bot/README.md))
+* **Node.js 18+** & **Python 3.10+**
+* **Alchemy Account** (for Sepolia RPC & Account Kit)
+* **Sepolia ETH** (for gas)
 
----
+### Step 1: Deploy the Vault
 
-### Step 1: Deploy MockVault (Sepolia)
+Deploy the `MockVault` contract that will enforce our security rules.
 
 ```bash
 cd Frontend/contracts
 npm install
-cp .env.example .env
-# Edit .env: set PRIVATE_KEY (deployer) and optionally SEPOLIA_RPC_URL
+# Create .env with PRIVATE_KEY (deployer) & ALCHEMY_API_KEY
 npm run compile
 npm run deploy:sepolia
+# 📋 COPY THE DEPLOYED VAULT ADDRESS!
+
 ```
 
-Copy the printed **MockVault** address; you’ll need it for the Frontend.
+### Step 2: Start the Frontend
 
----
-
-### Step 2: Run the CryptoKnight Frontend
+Configure the UI to talk to your vault and Alchemy.
 
 ```bash
 cd Frontend
 npm install
+cp .env.example .env.local
+
 ```
 
-Create `.env.local` (or `.env`) in `Frontend/` with at least:
+**Update `.env.local`:**
 
 ```env
-# Required
-NEXT_PUBLIC_MOCK_VAULT_ADDRESS=0xYourDeployedMockVaultAddress
-NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_api_key
-NEXT_PUBLIC_SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+NEXT_PUBLIC_MOCK_VAULT_ADDRESS=0xYourDeployedAddress
+NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_key
+NEXT_PUBLIC_SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/your_key
+NEXT_PUBLIC_BOT_API_URL=http://localhost:5001
 
-# Optional (defaults used if omitted)
-# NEXT_PUBLIC_BOT_API_URL=http://localhost:5001
 ```
 
-Then:
+Run the app:
 
 ```bash
 npm run dev
+# Open http://localhost:3000
+
 ```
 
-Open **http://localhost:3000**.
+### Step 3: Unleash the Bot (Optional)
 
-1. **Connect** your wallet (MetaMask) and switch to Sepolia.
-2. You’ll be sent to **Onboarding**: create the smart account, add gas if prompted, optionally deposit into the vault (or “Skip to main screen”).
-3. On the **Dashboard** you can issue a session key, ping the vault, deposit/withdraw, set limits (if owner), and use the bot controls.
-
----
-
-### Step 3 (Optional): Run the Trading Bot & API
-
-The dashboard’s “Trade agent” section needs the Bot API. From the repo root:
+Run the Python agent locally to simulate the trading activity.
 
 ```bash
 cd Bot
 python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-Configure Valkey (see [Bot/README.md](./Bot/README.md)), then copy env and set variables:
-
-```bash
-cp .env.example .env
-# Edit .env: PRIVATE_KEY, RPC_URL, COINGECKO_API_KEY, PINATA_JWT, TRADE_LOGGER_ADDRESS, etc.
-```
-
-Start the API (which also runs the bot when started from the dashboard):
-
-```bash
+cp .env.example .env 
+# Configure .env with your Session Key (generated from frontend) or a test key
 python app.py
-```
-
-By default the API listens on **http://localhost:5001**. The frontend uses `NEXT_PUBLIC_BOT_API_URL` (default `http://localhost:5001`) to talk to it.
-
----
-
-## Project Layout
 
 ```
-├── Frontend/                 # CryptoKnight Next.js app
-│   ├── app/
-│   │   ├── page.tsx         # Login
-│   │   ├── onboarding/     # Smart account + vault onboarding
-│   │   └── dashboard/      # Main app (session keys, vault, bot)
-│   ├── components/
-│   ├── hooks/
-│   ├── lib/
-│   ├── contracts/           # Hardhat + MockVault.sol
-│   │   ├── contracts/
-│   │   └── scripts/deploy.ts
-│   └── .env / .env.local    # NEXT_PUBLIC_*, etc.
-├── Bot/                     # Trading bot + Flask API
-│   ├── app.py               # Flask API (port 5001)
-│   ├── bot.py               # Trading loop
-│   ├── strategy.py, uniswap.py, trade_proof.py, ...
-│   └── README.md            # Full bot setup & trade proofs
-├── images/                  # Screenshots for this README
-│   └── README.md            # How to add images
-└── README.md                # This file
+
+---
+
+## 🧪 Testing the Security
+
+To verify the system works as intended, try the **"Break the System"** flow in the Dashboard:
+
+1. **Fund the Vault:** Deposit 0.01 Sepolia ETH.
+2. **Authorize the Bot:** Issue a session key.
+3. **Run a Trade:** Click "Test Trade" (Bot calls `ping` or `swap`). **Result: ✅ Success.**
+4. **Try to Steal:** Click "Test Withdraw" using the Bot's key. **Result: ❌ Reverted.**
+
+## 📂 Project Structure
+
+```
+├── Frontend/           # Next.js Dashboard & Logic
+│   ├── app/            # App Router (Onboarding -> Dashboard)
+│   ├── contracts/      # Hardhat MockVault environment
+│   └── lib/            # Alchemy Account Kit integration
+├── Bot/                # Python Trading Agent
+│   ├── app.py          # Flask API for Frontend control
+│   ├── bot.py          # SMA Trading Logic
+│   └── uniswap.py      # V3 Interaction Scripts
+└── images/             # Diagrams & Screenshots
+
 ```
 
 ---
 
-## Environment Variables Summary
-
-| Where | Variable | Purpose |
-|-------|----------|---------|
-| **Frontend** | `NEXT_PUBLIC_MOCK_VAULT_ADDRESS` | Deployed MockVault on Sepolia |
-| **Frontend** | `NEXT_PUBLIC_ALCHEMY_API_KEY` | Alchemy app key (Sepolia) |
-| **Frontend** | `NEXT_PUBLIC_SEPOLIA_RPC_URL` | Sepolia RPC URL |
-| **Frontend** | `NEXT_PUBLIC_BOT_API_URL` | Bot API base URL (default `http://localhost:5001`) |
-| **Frontend** | (optional) Gemini, CoinGecko, Valkey | For AI insights / price / cache (see Frontend/.env) |
-| **Contracts** | `PRIVATE_KEY` | Deployer EOA for MockVault |
-| **Contracts** | `SEPOLIA_RPC_URL` | Optional; defaults or Alchemy |
-| **Bot** | See [Bot/README.md](./Bot/README.md) | RPC, CoinGecko, Pinata, Valkey, TradeLogger, etc. |
-
----
-
-## Tech Stack
-
-- **Frontend:** Next.js 14 (App Router), React, wagmi, viem, Alchemy Account Kit, Tailwind, Radix UI
-- **Contracts:** Hardhat, Solidity, MockVault (deposit / ping / withdraw / limits)
-- **Bot:** Python 3, Flask, web3.py, Uniswap V3, CoinGecko, Pinata (IPFS), Valkey (Redis)
-
----
-
-## More Detail
-
-- **Session keys & vault flow:** [Frontend/README.md](./Frontend/README.md) and [Frontend/SESSION_KEYS_POC_CONTEXT.md](./Frontend/SESSION_KEYS_POC_CONTEXT.md)
-- **Trading bot & trade proofs:** [Bot/README.md](./Bot/README.md)
-
----
+*Built with ❤️ for HackNC State 2026.*
